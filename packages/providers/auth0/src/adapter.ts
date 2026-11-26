@@ -1,7 +1,7 @@
 import type { ConfigSnapshot, ProviderAdapter } from "@auththread/adapter-kit";
 import { ProviderError } from "@auththread/adapter-kit";
 import { type ProviderEvent, sha256Hex } from "@auththread/schema";
-import { Clock, Effect, Schema } from "effect";
+import { Clock, Effect, Option, Schema } from "effect";
 import { auth0Browser } from "./browser.ts";
 import {
   AUTH0_FEED_PATH,
@@ -11,10 +11,13 @@ import {
   verifyLogStream,
 } from "./feed.ts";
 
-const vendorCode = (event: ProviderEvent): string => {
-  const value = event.attributes["auth.error.vendor_code"];
-  return typeof value === "string" ? value : "";
-};
+const vendorCode = (event: ProviderEvent): string =>
+  Option.getOrElse(
+    Schema.decodeUnknownOption(Schema.String)(
+      event.attributes["auth.error.vendor_code"],
+    ),
+    () => "",
+  );
 
 const ActionSchema = Schema.Struct({
   name: Schema.optionalKey(Schema.String),

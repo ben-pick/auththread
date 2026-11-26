@@ -108,9 +108,7 @@ export const runSinkConformance = (
         "idempotency key is not stable per journey",
       );
 
-      yield* input.sink.write(
-        JSON.parse(JSON.stringify(batch)) as typeof batch,
-      );
+      yield* input.sink.write(structuredClone(batch));
       yield* input.sink.write(batch);
     }
 

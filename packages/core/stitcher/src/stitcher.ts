@@ -32,6 +32,7 @@ import {
   Duration,
   Effect,
   Layer,
+  Option,
   Ref,
   Schema,
   type Scope,
@@ -124,23 +125,26 @@ const json = (body: unknown, status = 200): Response =>
     headers: { ...CORS, "cache-control": "no-store" },
   });
 
+const stringValue = (value: unknown): string | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
 const hintsOf = (
   attributes: Attributes,
   salt: string | undefined,
   tenant: string | undefined,
 ): CorrelationHints => {
-  const userHash = attributes["auth.user.hash"];
-  const clientId = attributes["auth.client_id"];
-  const transactionId = attributes["auth.transaction.id"];
-  const rawUser = attributes.user_id;
+  const userHash = stringValue(attributes["auth.user.hash"]);
+  const clientId = stringValue(attributes["auth.client_id"]);
+  const transactionId = stringValue(attributes["auth.transaction.id"]);
+  const rawUser = stringValue(attributes.user_id);
   return {
     ...(tenant === undefined ? {} : { tenant }),
-    ...(typeof userHash === "string" ? { userHash } : {}),
-    ...(typeof rawUser === "string" && salt !== undefined
+    ...(userHash === undefined ? {} : { userHash }),
+    ...(rawUser !== undefined && salt !== undefined
       ? { userHash: hashUser(rawUser, salt) }
       : {}),
-    ...(typeof clientId === "string" ? { clientId } : {}),
-    ...(typeof transactionId === "string" ? { transactionId } : {}),
+    ...(clientId === undefined ? {} : { clientId }),
+    ...(transactionId === undefined ? {} : { transactionId }),
   };
 };
 
@@ -238,9 +242,6 @@ const redactEvent = (
     ...(tenant === undefined ? {} : { salt: tenant.salt }),
   }),
 });
-
-const stringValue = (value: unknown, fallback: string): string =>
-  typeof value === "string" ? value : fallback;
 
 export class Stitcher extends Context.Service<
   Stitcher,
@@ -492,14 +493,14 @@ const makeStitcher = (
             .filter((item) => item.kind === "event")
             .map((item) => item.event);
           const first = sortSpans(spans)[0] as Span;
-          const provider = stringValue(
-            first.attributes["auth.provider"],
-            events[0]?.provider ?? "unknown",
-          );
-          const tenant = stringValue(
-            first.attributes["auth.tenant"],
-            events[0]?.tenant ?? "unknown",
-          );
+          const provider =
+            stringValue(first.attributes["auth.provider"]) ??
+            events[0]?.provider ??
+            "unknown";
+          const tenant =
+            stringValue(first.attributes["auth.tenant"]) ??
+            events[0]?.tenant ??
+            "unknown";
 
           const journey: Journey = buildJourney({
             traceId: first.traceId,

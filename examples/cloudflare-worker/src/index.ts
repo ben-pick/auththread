@@ -94,17 +94,18 @@ export class JourneyDurableObject extends DurableObject<Env> {
     super(state, env);
 
     const decoded = configFor(env.AUTHTHREAD_TENANTS);
-    if (decoded._tag === "Failure")
-      throw new Error(`invalid AUTHTHREAD_TENANTS: ${decoded.failure.message}`);
-
+    // The Worker validates the same config before routing. An invalid value
+    // leaves this object with no tenants instead of throwing in a constructor.
     const tenants: TenantSettings<Auth0FeedSettings>[] =
-      decoded.success.tenants.map((tenant) => ({
-        tenant: tenant.tenant,
-        provider: tenant.provider,
-        apiKeyHash: sha256Hex(tenant.apiKey),
-        salt: tenant.salt,
-        providerSettings: tenant.providerSettings ?? {},
-      }));
+      decoded._tag === "Success"
+        ? decoded.success.tenants.map((tenant) => ({
+            tenant: tenant.tenant,
+            provider: tenant.provider,
+            apiKeyHash: sha256Hex(tenant.apiKey),
+            salt: tenant.salt,
+            providerSettings: tenant.providerSettings ?? {},
+          }))
+        : [];
 
     const JourneyRuntime = createJourneyDurableObject({
       providers: [oidcAdapter, auth0Adapter],

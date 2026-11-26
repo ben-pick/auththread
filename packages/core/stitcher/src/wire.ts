@@ -7,7 +7,7 @@ import type {
   SpanKind,
   SpanStatus,
 } from "@auththread/schema";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { BadRequest } from "./errors.ts";
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
@@ -97,23 +97,45 @@ const OtlpAttributeSchema = Schema.Struct({
 
 const OtlpAttributesSchema = Schema.Array(OtlpAttributeSchema);
 
+const OtlpStringValue = Schema.Struct({ stringValue: Schema.String });
+const OtlpIntValue = Schema.Struct({
+  intValue: Schema.Union([Schema.String, Schema.Finite]),
+});
+const OtlpDoubleValue = Schema.Struct({ doubleValue: Schema.Finite });
+const OtlpBoolValue = Schema.Struct({ boolValue: Schema.Boolean });
+const OtlpArrayValue = Schema.Struct({
+  arrayValue: Schema.Struct({ values: Schema.Array(Schema.Unknown) }),
+});
+
 const decodeOtlpValue = (value: unknown): AttributeValue => {
-  if (typeof value !== "object" || value === null) return String(value);
-  const input = value as Record<string, unknown>;
-  if (typeof input.stringValue === "string") return input.stringValue;
-  if (typeof input.intValue === "string") return Number(input.intValue);
-  if (typeof input.intValue === "number") return input.intValue;
-  if (typeof input.doubleValue === "number") return input.doubleValue;
-  if (typeof input.boolValue === "boolean") return input.boolValue;
-  if (typeof input.arrayValue === "object" && input.arrayValue !== null) {
-    const values = (input.arrayValue as { values?: unknown }).values;
-    if (Array.isArray(values)) {
-      return values.map((entry) => {
-        const decoded = decodeOtlpValue(entry);
-        return typeof decoded === "string" ? decoded : JSON.stringify(decoded);
-      });
-    }
+  const text = Schema.decodeUnknownOption(OtlpStringValue)(value);
+  if (Option.isSome(text)) return text.value.stringValue;
+
+  const int = Schema.decodeUnknownOption(OtlpIntValue)(value);
+  if (Option.isSome(int)) {
+    const asString = Schema.decodeUnknownOption(Schema.String)(
+      int.value.intValue,
+    );
+    return Option.isSome(asString)
+      ? Number(asString.value)
+      : int.value.intValue;
   }
+
+  const double = Schema.decodeUnknownOption(OtlpDoubleValue)(value);
+  if (Option.isSome(double)) return double.value.doubleValue;
+
+  const bool = Schema.decodeUnknownOption(OtlpBoolValue)(value);
+  if (Option.isSome(bool)) return bool.value.boolValue;
+
+  const array = Schema.decodeUnknownOption(OtlpArrayValue)(value);
+  if (Option.isSome(array)) {
+    return array.value.arrayValue.values.map((entry) => {
+      const decoded = decodeOtlpValue(entry);
+      const asString = Schema.decodeUnknownOption(Schema.String)(decoded);
+      return Option.isSome(asString) ? asString.value : JSON.stringify(decoded);
+    });
+  }
+
   return "";
 };
 

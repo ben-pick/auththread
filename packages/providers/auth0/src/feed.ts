@@ -56,6 +56,13 @@ const ERROR_CODE: Record<string, string> = {
   limit_wc: "rate_limited",
 };
 
+const DetailsSchema = Schema.Struct({
+  transaction_id: Schema.optionalKey(Schema.String),
+  "ext-trace_id": Schema.optionalKey(Schema.String),
+  ext_trace_id: Schema.optionalKey(Schema.String),
+  trace_id: Schema.optionalKey(Schema.String),
+});
+
 const LogEntrySchema = Schema.Struct({
   log_id: Schema.optionalKey(Schema.String),
   date: Schema.String,
@@ -63,7 +70,7 @@ const LogEntrySchema = Schema.Struct({
   user_id: Schema.optionalKey(Schema.String),
   client_id: Schema.optionalKey(Schema.String),
   connection: Schema.optionalKey(Schema.String),
-  details: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+  details: Schema.optionalKey(DetailsSchema),
 });
 
 const EnvelopeSchema = Schema.Struct({
@@ -83,10 +90,10 @@ const entriesOf = (body: unknown): readonly unknown[] => {
   return [body];
 };
 
-const readTraceId = (details: Record<string, unknown>) => {
-  for (const key of ["ext-trace_id", "ext_trace_id", "trace_id"]) {
+const readTraceId = (details: typeof DetailsSchema.Type) => {
+  for (const key of ["ext-trace_id", "ext_trace_id", "trace_id"] as const) {
     const value = details[key];
-    if (typeof value === "string" && isTraceId(value)) return value;
+    if (value !== undefined && isTraceId(value)) return value;
   }
   return undefined;
 };
@@ -103,10 +110,7 @@ const eventOf = (
   const userId = entry.user_id;
   const clientId = entry.client_id;
   const connection = entry.connection;
-  const transactionId =
-    typeof details.transaction_id === "string"
-      ? details.transaction_id
-      : undefined;
+  const transactionId = details.transaction_id;
   const neutral = NEUTRAL_TYPE[entry.type] ?? "provider_event";
   const kind = neutral.startsWith("signup_") ? "signup" : undefined;
   const logId = entry.log_id;

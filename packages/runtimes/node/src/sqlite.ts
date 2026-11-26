@@ -18,6 +18,7 @@ import {
   Duration,
   Effect,
   Layer,
+  Option,
   Ref,
   Schema,
   type Scope,
@@ -79,10 +80,13 @@ CREATE TABLE IF NOT EXISTS trace_owners (
 );
 `;
 
+const stringValue = (value: unknown): string | undefined =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
 const tenantOf = (item: JourneyItem): string | undefined => {
   if (item.kind === "span") {
-    const value = item.span.attributes["auth.tenant"];
-    return typeof value === "string" && value.length > 0 ? value : undefined;
+    const value = stringValue(item.span.attributes["auth.tenant"]);
+    return value !== undefined && value.length > 0 ? value : undefined;
   }
   return item.event.tenant.length > 0 ? item.event.tenant : undefined;
 };
@@ -90,17 +94,14 @@ const tenantOf = (item: JourneyItem): string | undefined => {
 const hintsOf = (item: JourneyItem, tenant: string): CorrelationHints => {
   if (item.kind === "span") {
     const attributes = item.span.attributes;
+    const userHash = stringValue(attributes["auth.user.hash"]);
+    const clientId = stringValue(attributes["auth.client_id"]);
+    const transactionId = stringValue(attributes["auth.transaction.id"]);
     return {
       tenant,
-      ...(typeof attributes["auth.user.hash"] === "string"
-        ? { userHash: attributes["auth.user.hash"] }
-        : {}),
-      ...(typeof attributes["auth.client_id"] === "string"
-        ? { clientId: attributes["auth.client_id"] }
-        : {}),
-      ...(typeof attributes["auth.transaction.id"] === "string"
-        ? { transactionId: attributes["auth.transaction.id"] }
-        : {}),
+      ...(userHash === undefined ? {} : { userHash }),
+      ...(clientId === undefined ? {} : { clientId }),
+      ...(transactionId === undefined ? {} : { transactionId }),
     };
   }
   return { ...item.event.hints, tenant };
@@ -224,15 +225,13 @@ export const createSQLiteStore = (
         Effect.gen(function* () {
           const tenant = tenantOf(item);
           const hints = hintsOf(item, tenant ?? "unknown");
-          yield* transaction("append", () => {
+          const conflict = yield* transaction("append", () => {
             if (tenant !== undefined) {
               const owner = ownerGet.get(traceId) as
                 | { tenant: string }
                 | undefined;
+              if (owner !== undefined && owner.tenant !== tenant) return true;
               if (owner === undefined) ownerInsert.run(traceId, tenant);
-              else if (owner.tenant !== tenant) {
-                throw new Error("trace belongs to another tenant");
-              }
             }
 
             itemInsert.run(
@@ -253,7 +252,14 @@ export const createSQLiteStore = (
                 item.atMs,
               );
             }
+            return false;
           });
+
+          if (conflict)
+            return yield* fail(
+              "append",
+              new Error("trace belongs to another tenant"),
+            );
         }),
       read: (traceId) =>
         Effect.gen(function* () {
