@@ -16,7 +16,9 @@ const env = (name: string): string | undefined => process.env[name];
 /** The library default keeps 10% of successes. Set 1 to keep every journey. */
 const sampling = (): SamplingPolicy => {
   const raw = Number(env("AUTHTHREAD_SAMPLE_SUCCESS") ?? "0.1");
-  const successRate = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0.1;
+  const successRate = Number.isFinite(raw)
+    ? Math.min(Math.max(raw, 0), 1)
+    : 0.1;
   return { ...DEFAULT_SAMPLING, successRate };
 };
 
