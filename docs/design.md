@@ -80,13 +80,14 @@ The hard problem is that a login crosses four systems that share nothing.
      browser spans exist until a hook or feed joins.
 3. Hooks and page plugins read the ID and emit spans.
 4. Feed events either carry the ID in their details or carry hints.
-5. The stitcher joins an event by exact ID when present, otherwise by scored hints inside a
-   two minute window.
+5. The stitcher joins an event by exact ID when present, otherwise by user hash inside the
+   same tenant and a two minute window. A client ID alone never joins, because a client is
+   shared by every user of an app.
 6. Finalisation derives a deterministic root span.
 
-Hints are `userHash` and `clientId`, plus `ipHash` and `userAgentHash` when a provider can
-supply them. The buffer indexes hint values when a span arrives, so a later event with no
-trace ID can still find the journey.
+Hints are scoped by tenant and matched on the user hash. A client ID is carried but never
+enough to join, because a client is shared by every user of an app. The buffer indexes hint
+values when a span arrives, so a later event with no trace ID can still find the journey.
 
 An event that arrives before any span goes into an in-process pending list. The next span
 whose hints match adopts it. Pending entries expire after the TTL and are capped at 1000.
@@ -191,6 +192,11 @@ Four rules, applied twice, in the emitter and again in the stitcher:
 
 Raw request bodies are never read. The provider feed parser receives a `hashUser` function
 bound to the tenant salt, so a raw provider user ID never exists in a normalised event.
+Span attributes, span events and status messages all pass through redaction. An
+`auth.user.hash` that is not a real hash is rehashed or dropped.
+
+A stitcher stamps `auth.tenant` and `auth.provider` from the authenticated tenant, so a page
+or hook span cannot label a journey as someone else's or as `unknown`.
 
 **Rebuttal point.** A salted hash is pseudonymous, not anonymous. Correlating it with a
 provider's logs can re-identify a person. The claim is "no PII by default", not "anonymity".
@@ -212,7 +218,7 @@ Ingest an event:
 1. Ask the adapter to classify it into an outcome and neutral error code.
 2. Fill the tenant, hash raw identifiers, redact.
 3. If it carries a trace ID, append to that trace.
-4. Otherwise ask the buffer for candidates by hint.
+4. Otherwise ask the buffer for candidates by tenant and user hash.
 5. If there is one, append to the best candidate. If not, park it as pending.
 
 Finalise:
@@ -414,6 +420,9 @@ error handling become the expensive part.
 | One DO per tenant | One DO per journey | A persistent hint directory |
 | In-process pending events | Persistent pending store | Multi-instance Node deployments |
 | Deterministic sampling | Random sampling | If statistical fidelity beats replayability |
+| Hint join requires a user hash and the same tenant | Join on client ID too | If providers expose a per-session client |
+| Deadlines never sit in the past | Trust client timestamps | Never for a quiet period |
+| New login attempt rotates the trace | Keep one trace per tab | If an app performs several logins in one redirect |
 | Fail-closed redaction | Keep raw identifiers when no salt | Never for a default |
 | Hash to 64 bits | Full 128-bit IDs | High volume or collision evidence |
 | 250 ms Action timeout | No timeout | Never in the login path |
@@ -440,7 +449,7 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 19 test files, 89 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 19 test files, 94 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |

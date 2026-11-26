@@ -51,7 +51,7 @@ See `examples/keycloak-compose/README.md`.
    - `oidc`: nothing. The browser SDK keys the journey on its own state round trip.
 3. Hook wrappers and page plugins read the ID and emit spans to the stitcher.
 4. Provider feed items are normalised, then joined by an exact trace ID when present,
-   otherwise by scored hints (user hash, client) within a two minute window.
+   otherwise by a user hash inside the same tenant and a two minute window.
 5. The stitcher finalises on a quiet period, derives the root span ID as
    `sha256("root:" + traceId)[0..16]`, and writes the journey to every sink.
 
@@ -89,6 +89,9 @@ A provider, runtime or sink is supported only when its conformance suite is gree
 | Redis, Postgres, D1, Lambda, Kubernetes | | next |
 | OTLP, wide event, webhook | | v0.1 |
 | Object store, Datadog native, Splunk HEC, Kafka | | community |
+
+Storage backends beyond memory and Durable Object storage are deferred by ADR-0007, and the
+page snippet supply chain is manual by ADR-0008. Both are recorded rather than implied.
 
 ## Neutral attributes
 

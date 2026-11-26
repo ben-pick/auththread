@@ -24,7 +24,8 @@ enforced-by:
 - `packages/core/{schema,otlp,adapter-kit,browser}` must not depend on a published package
   at runtime. Tests may use Vitest.
 - The browser SDK stays under 5 KB gzipped and the page snippet under 8 KB.
-- Hook wrappers add under 50 ms at p95 and never block a login.
+- Hook wrappers never block a login. The target is under 50 ms at p95, measured against a
+  real Action. That measurement has not been taken (see `docs/verification.md`).
 
 ## Why
 
