@@ -46,6 +46,7 @@ const server = createNodeServer({
   settings: createFileSettings(
     env("AUTHTHREAD_CONFIG") ?? "/etc/auththread/config.json",
   ),
+  quietMs: Number(env("AUTHTHREAD_QUIET_MS") ?? "600000"),
   onError: (error) => console.error("auththread:", error),
 });
 
