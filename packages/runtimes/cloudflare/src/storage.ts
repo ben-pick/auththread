@@ -14,6 +14,8 @@ export interface DurableObjectStorageLike {
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
   list<T>(options?: { prefix?: string }): Promise<Map<string, T>>;
+  /** Optional so non-Durable-Object fakes need not model alarms. */
+  getAlarm?(): Promise<number | null>;
   setAlarm(atMs: number): Promise<void>;
   deleteAlarm(): Promise<void>;
 }
@@ -49,32 +51,37 @@ export const createDurableObjectBuffer = (
         try: () => storage.list<JourneyItem>({ prefix: `j:${traceId}:` }),
         catch: (cause) => storageError("delete", cause),
       });
-      for (const key of items.keys())
+      for (const key of items.keys()) {
         yield* Effect.tryPromise({
           try: () => storage.delete(key),
           catch: (cause) => storageError("delete", cause),
         });
+      }
+
       const hints = yield* Effect.tryPromise({
         try: () => storage.list<{ atMs: number }>({ prefix: "h:" }),
         catch: (cause) => storageError("delete", cause),
       });
       for (const key of hints.keys()) {
-        if (key.endsWith(`:${traceId}`))
+        if (key.endsWith(`:${traceId}`)) {
           yield* Effect.tryPromise({
             try: () => storage.delete(key),
             catch: (cause) => storageError("delete", cause),
           });
+        }
       }
+
       const transactions = yield* Effect.tryPromise({
         try: () => storage.list<{ atMs: number }>({ prefix: "x:" }),
         catch: (cause) => storageError("delete", cause),
       });
       for (const key of transactions.keys()) {
-        if (key.endsWith(`:${traceId}`))
+        if (key.endsWith(`:${traceId}`)) {
           yield* Effect.tryPromise({
             try: () => storage.delete(key),
             catch: (cause) => storageError("delete", cause),
           });
+        }
       }
     });
 
@@ -101,14 +108,13 @@ export const createDurableObjectBuffer = (
             try: () => storage.get<{ atMs: number }>(storageKey),
             catch: (cause) => storageError("indexHints", cause),
           });
+          if (existing !== undefined && existing.atMs >= atMs) continue;
           yield* Effect.tryPromise({
-            try: () =>
-              storage.put(storageKey, {
-                atMs: Math.max(existing?.atMs ?? 0, atMs),
-              }),
+            try: () => storage.put(storageKey, { atMs }),
             catch: (cause) => storageError("indexHints", cause),
           });
         }
+
         if (hints.transactionId !== undefined) {
           const storageKey = transactionKey(
             hints.tenant ?? "",
@@ -119,13 +125,12 @@ export const createDurableObjectBuffer = (
             try: () => storage.get<{ atMs: number }>(storageKey),
             catch: (cause) => storageError("indexHints", cause),
           });
-          yield* Effect.tryPromise({
-            try: () =>
-              storage.put(storageKey, {
-                atMs: Math.max(existing?.atMs ?? 0, atMs),
-              }),
-            catch: (cause) => storageError("indexHints", cause),
-          });
+          if (existing === undefined || existing.atMs < atMs) {
+            yield* Effect.tryPromise({
+              try: () => storage.put(storageKey, { atMs }),
+              catch: (cause) => storageError("indexHints", cause),
+            });
+          }
         }
       }),
     findByTransaction: (tenant, transactionId, windowMs, nowMs) =>
@@ -212,8 +217,9 @@ export type AlarmScheduler = SchedulerService & {
 };
 
 /**
- * One alarm per object, fired at the earliest deadline. Every schedule recomputes
- * the minimum, so a quiet period extends cleanly when a late span arrives.
+ * One alarm per object, fired at the earliest deadline. `schedule` only moves
+ * the alarm earlier; `cancel` and `runDue` recompute the minimum, so a quiet
+ * period extends cleanly when a late span arrives.
  */
 export const createAlarmScheduler = (
   storage: DurableObjectStorageLike,
@@ -261,16 +267,37 @@ export const createAlarmScheduler = (
 
   const runDue = (nowMs: number): Effect.Effect<void, StorageError> =>
     Effect.gen(function* () {
+      let firstFailure: StorageError | undefined;
+
       for (const traceId of yield* due(nowMs)) {
-        yield* Effect.tryPromise({
-          try: () => storage.delete(alarmKey(traceId)),
-          catch: (cause) => storageError("alarm", cause),
-        });
-        for (const handler of yield* Ref.get(handlers)) {
-          yield* handler(traceId, nowMs);
-        }
+        yield* Effect.gen(function* () {
+          for (const handler of yield* Ref.get(handlers)) {
+            yield* handler(traceId, nowMs);
+          }
+          yield* Effect.tryPromise({
+            try: () => storage.delete(alarmKey(traceId)),
+            catch: (cause) => storageError("alarm", cause),
+          });
+        }).pipe(
+          Effect.catchTag("StorageError", (error) =>
+            Effect.sync(() => {
+              // Keep the deadline so align() reschedules it and the journey is
+              // not lost when one write fails.
+              firstFailure ??= error;
+            }),
+          ),
+        );
       }
-      yield* align();
+
+      yield* align().pipe(
+        Effect.catchTag("StorageError", (error) =>
+          Effect.sync(() => {
+            firstFailure ??= error;
+          }),
+        ),
+      );
+
+      if (firstFailure !== undefined) return yield* firstFailure;
     });
 
   return {
@@ -280,7 +307,23 @@ export const createAlarmScheduler = (
           try: () => storage.put(alarmKey(traceId), { atMs }),
           catch: (cause) => storageError("schedule", cause),
         });
-        yield* align();
+
+        const getAlarm = storage.getAlarm;
+        if (getAlarm === undefined) {
+          yield* align();
+          return;
+        }
+
+        const current = yield* Effect.tryPromise({
+          try: () => getAlarm.call(storage),
+          catch: (cause) => storageError("schedule", cause),
+        });
+        if (current === null || atMs < current) {
+          yield* Effect.tryPromise({
+            try: () => storage.setAlarm(atMs),
+            catch: (cause) => storageError("schedule", cause),
+          });
+        }
       }),
     cancel: (traceId) =>
       Effect.gen(function* () {

@@ -9,11 +9,16 @@ catalog:
   "@effect/vitest": 4.1.2
   "@effect/platform-node": 4.1.2
   "@biomejs/biome": 2.6.4
+  "@cloudflare/workers-types": 5.20261123.1
   "@types/node": 24.19.2
   dependency-cruiser: 18.7.1
   turbo: 2.11.10
+  wrangler: 4.168.0
 
-# esbuild ships a native binary through a postinstall. Allow that one build and
-# nothing else, so an added dependency cannot run a script silently.
+# Build scripts are opt-in per package. esbuild ships a native binary and
+# workerd (used by Wrangler) needs its platform runtime selected at install
+# time. Allow only those two, so an added dependency cannot run a script
+# silently.
 allowBuilds:
   esbuild: true
+  workerd: true

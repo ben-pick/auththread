@@ -91,3 +91,67 @@ jobs:
             gh api --method POST "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" -F body=@"$file" > /dev/null
             echo "Posted a new comment"
           fi
+
+  # Measures the same bundles as `pnpm budget` in the check job, but against
+  # the PR base. It uploads markdown only: the comment job has a write token
+  # and never checks out PR code.
+  bundle:
+    name: bundle
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Measure bundles
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          pnpm budget --base "origin/${BASE_REF}" --format markdown > bundle.md
+          cat bundle.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: bundle.md
+
+  bundle-comment:
+    name: bundle-comment
+    needs: bundle
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+          path: bundle
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          file=bundle/bundle.md
+          marker='<!-- auththread-bundle -->'
+          chars=$(LC_ALL=C.UTF-8 wc -m < "$file")
+          if [ "$chars" -gt 62000 ] || [ "$(sed -n 1p "$file")" != "$marker" ]; then
+            echo "::error::bundle report has an unexpected shape; not posting"
+            exit 1
+          fi
+          id=$(gh api --paginate "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\"))) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/${GH_REPO}/issues/comments/${id}" -F body=@"$file" > /dev/null
+            echo "Updated comment ${id}"
+          else
+            gh api --method POST "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" -F body=@"$file" > /dev/null
+            echo "Posted a new comment"
+          fi

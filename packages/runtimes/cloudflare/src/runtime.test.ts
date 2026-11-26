@@ -3,6 +3,7 @@ import {
   runEndToEndConformance,
   runRuntimeConformance,
   StitcherUnderTest,
+  StorageError,
   staticSettingsLayer,
   type TenantSettings,
 } from "@auththread/adapter-kit";
@@ -38,6 +39,9 @@ class FakeStorage implements DurableObjectStorageLike {
         key.startsWith(prefix),
       ) as Array<[string, T]>,
     );
+  }
+  async getAlarm(): Promise<number | null> {
+    return this.alarmAt;
   }
   async setAlarm(atMs: number): Promise<void> {
     this.alarmAt = atMs;
@@ -90,9 +94,38 @@ describe("durable object runtime", () => {
       expect(storage.alarmAt).toBe(300);
       yield* scheduler.schedule("c7".repeat(16) as typeof fixture.traceId, 200);
       expect(storage.alarmAt).toBe(200);
+      yield* scheduler.schedule("d7".repeat(16) as typeof fixture.traceId, 400);
+      expect(storage.alarmAt).toBe(200);
       yield* scheduler.cancel("c7".repeat(16) as typeof fixture.traceId);
       expect(storage.alarmAt).toBe(300);
     }),
+  );
+
+  it.effect(
+    "keeps a deadline when its handler fails so the alarm can retry",
+    () =>
+      Effect.gen(function* () {
+        const storage = new FakeStorage();
+        const scheduler = createAlarmScheduler(
+          storage,
+          Effect.succeed(fixture.nowMs),
+        );
+        yield* scheduler.schedule(fixture.traceId, 500);
+        yield* scheduler.onDue(() =>
+          Effect.fail(
+            new StorageError({
+              operation: "sink",
+              cause: new Error("sink unavailable"),
+            }),
+          ),
+        );
+
+        const error = yield* scheduler.runDue(fixture.nowMs).pipe(Effect.flip);
+        expect(error.operation).toBe("sink");
+        expect(String(error.cause)).toContain("sink unavailable");
+        expect(storage.map.has(`a:${fixture.traceId}`)).toBe(true);
+        expect(storage.alarmAt).toBe(500);
+      }),
   );
 
   it.effect("finalises a journey from an alarm and exports it", () =>

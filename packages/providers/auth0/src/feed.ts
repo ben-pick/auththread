@@ -17,6 +17,14 @@ export interface Auth0FeedSettings {
   readonly managementToken?: string;
 }
 
+export const Auth0FeedSettingsSchema = Schema.Struct({
+  feedSecret: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  domain: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  managementToken: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1)),
+  ),
+});
+
 export const AUTH0_FEED_PATH = "/log-stream";
 export const AUTH0_FEED_SECRET_HEADER = "x-auththread-feed-secret";
 

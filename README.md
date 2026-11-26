@@ -1,19 +1,19 @@
 # auththread
 
-**See one login journey end to end, in the observability tool you already use.**
+**See one login journey end to end, in the observability/analytics tool you already use.**
 
 [![status](https://img.shields.io/badge/status-v0.1-1f6feb)](#roadmap)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933)](#compatibility)
 [![otel](https://img.shields.io/badge/OpenTelemetry-optional-425CC7)](https://opentelemetry.io)
 
-Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
-one journey. It emits OTel spans, one wide event, or both. It is the instrumentation and the
-adapter framework, not a trace store.
+![One login, one trace: the auththread demo](docs/assets/auththread-demo.jpg)
 
-> **Status: v0.1, early.** The packages are not published to npm yet. Use the workspace or
-> the examples. Deep integration is available for Auth0. Generic OIDC gets browser-level
-> tracing everywhere.
+Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
+one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
+Auththread is the solution!
+
+> **Status: v0.1, early.** 
 
 ## Contents
 
@@ -41,7 +41,7 @@ A login crosses four systems that share nothing:
 - a provider event feed that arrives after the user is gone.
 
 Every provider has a different event model, so teams rebuild the glue per provider and again
-when they migrate. Auththread gives one neutral journey and one set of sinks, so the same
+when they migrate. Auththread gives one journey and one set of sinks, so the same
 dashboard works across providers.
 
 ## Quick start
@@ -49,7 +49,7 @@ dashboard works across providers.
 Requirements: [mise](https://mise.jdx.dev), Node 24 and pnpm 12. `mise install` provides the
 last two.
 
-### One journey in thirty seconds
+### Demo journey
 
 ```sh
 mise install
@@ -225,14 +225,15 @@ the stitcher agree without a round trip.
 ## Verification
 
 ```sh
-mise exec -- pnpm check   # types, lint, 134 tests, boundaries, budgets, agent files
+mise exec -- pnpm check   # types, lint, tests, boundaries, budgets, agent files
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
-mise exec -- pnpm budget  # browser SDK 2,659 B gzip, snippet 936 B gzip
+mise exec -- pnpm budget  # current bundle sizes against their budgets
+mise exec -- pnpm budget --base origin/main --format markdown  # PR bundle report
 ```
 
-Current status: 25 test files, 134 tests, 108 modules, no boundary violations. See
+Current status: `pnpm check` is green and `pnpm boundaries` reports no violation. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap

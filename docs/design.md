@@ -479,11 +479,11 @@ shrinks back to one route with one store, the layers and schemas become overhead
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 25 test files, 137 tests (**measured**) |
+| Suite green | `pnpm check` exits 0 (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | SDK 2,659 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
+| Browser budget | SDK and page snippet under 5 KB and 8 KB gzipped (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |

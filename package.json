@@ -16,6 +16,7 @@
     "boundaries": "depcruise --config .dependency-cruiser.cjs packages",
     "agents:check": "node packages/tooling/agents/src/cli.ts check",
     "agents:index": "node packages/tooling/agents/src/cli.ts index",
+    "skills:update": "node packages/tooling/agents/src/cli.ts skills:update",
     "demo": "node scripts/demo.ts",
     "smoke": "node scripts/smoke.ts",
     "graph": "node packages/tooling/dep-graph/src/cli.ts",

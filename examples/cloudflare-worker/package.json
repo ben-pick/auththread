@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node -e \"console.log('no tests')\""
+    "test": "node -e \"console.log('no tests')\"",
+    "types": "wrangler types --no-include-runtime worker-configuration.d.ts && biome format --write worker-configuration.d.ts"
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
@@ -19,6 +20,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "catalog:"
   }
 }
