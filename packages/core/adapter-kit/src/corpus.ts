@@ -158,14 +158,18 @@ const auth0Denied: JourneyFixture = {
       {
         "auth.error.code": "access_denied",
         "auth.error.source": "provider",
-        "auth.user.hash": "u_auth0_1",
+        "auth.user.hash": "u_0123456789abcdef",
       },
       { status: { code: "error" } },
     ),
   ],
   events: [
     event("auth0_evt_1", "auth0", "acme", "login_failure", BASE + 1200, {
-      hints: { userHash: "u_auth0_1", ipHash: "i_1", userAgentHash: "a_1" },
+      hints: {
+        userHash: "u_0123456789abcdef",
+        ipHash: "i_1",
+        userAgentHash: "a_1",
+      },
       attributes: { "auth.error.vendor_code": "unauthorized" },
     }),
   ],

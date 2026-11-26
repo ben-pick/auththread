@@ -38,9 +38,19 @@ const parseConfig = (value: unknown): TenantEntry[] => {
       return fail(`tenant ${index} needs a salt of at least 8 characters`);
     }
     if (
-      typeof entry.apiKey !== "string" &&
-      typeof entry.apiKeyHash !== "string"
+      entry.apiKey !== undefined &&
+      (typeof entry.apiKey !== "string" || entry.apiKey.length === 0)
     ) {
+      return fail(`tenant ${index} has an empty apiKey`);
+    }
+    if (
+      entry.apiKeyHash !== undefined &&
+      (typeof entry.apiKeyHash !== "string" ||
+        !/^[0-9a-f]{64}$/.test(entry.apiKeyHash))
+    ) {
+      return fail(`tenant ${index} has an invalid apiKeyHash`);
+    }
+    if (entry.apiKey === undefined && entry.apiKeyHash === undefined) {
       return fail(`tenant ${index} needs apiKey or apiKeyHash`);
     }
     return {

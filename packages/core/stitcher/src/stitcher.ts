@@ -64,6 +64,8 @@ export interface Stitcher {
   ingestSpan(span: Span, tenant?: TenantSettings): Promise<void>;
   ingestEvent(event: ProviderEvent, tenant?: TenantSettings): Promise<void>;
   runDue(nowMs: number): Promise<void>;
+  /** Finalise every in-flight journey now, used on graceful shutdown. */
+  drain(): Promise<void>;
   flush(): SinkBatch[];
   stats(): StitcherStats;
 }
@@ -145,8 +147,12 @@ async function readJson(request: Request): Promise<unknown> {
 
 const bearer = (request: Request): string | null => {
   const header = request.headers.get("authorization");
-  if (header?.toLowerCase().startsWith("bearer ")) return header.slice(7);
-  return request.headers.get("x-auththread-key");
+  if (header?.toLowerCase().startsWith("bearer ")) {
+    const value = header.slice(7).trim();
+    return value.length === 0 ? null : value;
+  }
+  const fallback = request.headers.get("x-auththread-key")?.trim();
+  return fallback !== undefined && fallback.length > 0 ? fallback : null;
 };
 
 export function createStitcher(options: StitcherOptions): Stitcher {
@@ -163,6 +169,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
   const pending: PendingEvent[] = [];
   const deadlines = new Map<TraceId, number>();
   const counts = new Map<TraceId, number>();
+  const owners = new Map<TraceId, string>();
   const finalising = new Set<TraceId>();
   let pendingBytes = 0;
   let overrideNow: number | null = null;
@@ -184,6 +191,23 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       ...(tenant === undefined ? {} : { salt: tenant.salt }),
     }),
   });
+
+  /**
+   * A trace ID can leak through a URL, a provider log or a referrer. Once a
+   * tenant owns a trace, another tenant cannot append to it.
+   */
+  function assertOwner(
+    traceId: TraceId,
+    tenant: TenantSettings | undefined,
+  ): void {
+    if (tenant === undefined) return;
+    const existing = owners.get(traceId);
+    if (existing !== undefined && existing !== tenant.tenant) {
+      rejected += 1;
+      throw new Unauthorized("trace belongs to another tenant");
+    }
+    owners.set(traceId, tenant.tenant);
+  }
 
   /**
    * Deadlines only move forward, and never sit in the past. A late span stamped
@@ -277,6 +301,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
         await options.buffer.delete(traceId);
         deadlines.delete(traceId);
         counts.delete(traceId);
+        owners.delete(traceId);
         return;
       }
 
@@ -337,6 +362,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       await options.buffer.delete(traceId);
       deadlines.delete(traceId);
       counts.delete(traceId);
+      owners.delete(traceId);
       finalised += 1;
     } finally {
       finalising.delete(traceId);
@@ -359,6 +385,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       const clean = redactSpan(stamped, {
         ...(tenant === undefined ? {} : { salt: tenant.salt }),
       });
+      assertOwner(span.traceId, tenant);
       if (!takeSlot(span.traceId)) return;
 
       const hints = hintsOf(clean.attributes, tenant?.salt, tenant?.tenant);
@@ -411,6 +438,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       const clean = redactEvent(withHints, tenant);
 
       if (clean.traceId !== undefined) {
+        assertOwner(clean.traceId, tenant);
         await appendEvent(clean.traceId, clean);
         return;
       }
@@ -423,20 +451,25 @@ export function createStitcher(options: StitcherOptions): Stitcher {
           clean.atMs,
         );
         if (exact !== null) {
+          assertOwner(exact, tenant);
           await appendEvent(exact, clean, true);
           return;
         }
       }
 
-      const candidates = await options.buffer.findCandidates(
-        clean.hints,
-        correlationWindowMs,
-        clean.atMs,
-      );
-      const best = candidates[0];
-      if (best !== undefined) {
-        await appendEvent(best, clean);
-        return;
+      const userHash = clean.hints.userHash;
+      if (userHash !== undefined) {
+        const candidates = await options.buffer.findCandidates(
+          { tenant: clean.tenant, userHash },
+          correlationWindowMs,
+          clean.atMs,
+        );
+        const best = candidates[0];
+        if (best !== undefined) {
+          assertOwner(best, tenant);
+          await appendEvent(best, clean);
+          return;
+        }
       }
 
       park({
@@ -473,6 +506,10 @@ export function createStitcher(options: StitcherOptions): Stitcher {
 
     flush() {
       return emitted.splice(0, emitted.length);
+    },
+
+    async drain() {
+      await stitcher.runDue(Number.MAX_SAFE_INTEGER);
     },
 
     stats() {

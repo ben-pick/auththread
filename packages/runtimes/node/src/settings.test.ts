@@ -64,5 +64,21 @@ describe("createFileSettings", () => {
     expect(() => createFileSettings(write(JSON.stringify({})))).toThrow(
       "tenants",
     );
+    expect(() =>
+      createFileSettings(
+        write(
+          JSON.stringify({
+            tenants: [
+              {
+                tenant: "acme",
+                provider: "oidc",
+                apiKey: "",
+                salt: "a-long-enough-salt",
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow("empty apiKey");
   });
 });

@@ -80,18 +80,29 @@ export function createMemoryBuffer(): JourneyBuffer {
       return best;
     },
     async findCandidates(hintValues, windowMs, nowMs) {
-      const scores = new Map<TraceId, number>();
-      for (const key of hintKeys(hintValues)) {
+      const keys = hintKeys(hintValues);
+      if (keys.length === 0) return [];
+
+      let candidates: Set<TraceId> | null = null;
+      for (const key of keys) {
+        const matching = new Set<TraceId>();
         for (const [traceId, atMs] of hints.get(key) ?? []) {
-          if (Math.abs(nowMs - atMs) > windowMs) continue;
-          scores.set(traceId, (scores.get(traceId) ?? 0) + 1);
+          if (Math.abs(nowMs - atMs) <= windowMs) matching.add(traceId);
         }
+        if (candidates === null) {
+          candidates = matching;
+        } else {
+          const next = new Set<TraceId>();
+          for (const traceId of candidates) {
+            if (matching.has(traceId)) next.add(traceId);
+          }
+          candidates = next;
+        }
+        if (candidates.size === 0) return [];
       }
-      return [...scores.entries()]
-        .sort(
-          ([a, scoreA], [b, scoreB]) => scoreB - scoreA || compareStrings(a, b),
-        )
-        .map(([traceId]) => traceId);
+
+      const result: Set<TraceId> = candidates ?? new Set();
+      return [...result].sort(compareStrings);
     },
     async prune(beforeMs) {
       let dropped = 0;

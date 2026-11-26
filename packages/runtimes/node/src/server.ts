@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type {
+  JourneyBuffer,
   ProviderAdapter,
   Sink,
   TenantSettings,
@@ -25,6 +26,7 @@ export interface NodeServerOptions {
   readonly quietMs?: number;
   readonly correlationWindowMs?: number;
   readonly ttlMs?: number;
+  readonly buffer?: JourneyBuffer;
   readonly scheduler?: NodeScheduler;
   readonly clock?: Clock;
   readonly onError?: (error: unknown) => void;
@@ -94,7 +96,7 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
     providers: options.providers,
     sinks: options.sinks,
     settings: options.settings,
-    buffer: createMemoryBuffer(),
+    buffer: options.buffer ?? createMemoryBuffer(),
     scheduler,
     ...(options.quietMs === undefined ? {} : { quietMs: options.quietMs }),
     ...(options.correlationWindowMs === undefined
@@ -145,12 +147,16 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
       });
     },
     close() {
-      scheduler.stop();
       return new Promise((resolve, reject) => {
         server.close(async (error) => {
           if (error !== undefined) {
             reject(error);
             return;
+          }
+          try {
+            await stitcher.drain();
+          } catch (drainError) {
+            options.onError?.(drainError);
           }
           for (const sink of options.sinks) {
             try {
@@ -159,6 +165,7 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
               options.onError?.(flushError);
             }
           }
+          scheduler.stop();
           resolve();
         });
       });

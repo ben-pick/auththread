@@ -6,7 +6,11 @@ import {
 import { auth0Adapter } from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
 import { createOtlpExporter } from "@auththread/otlp";
-import { createFileSettings, createNodeServer } from "@auththread/runtime-node";
+import {
+  createFileSettings,
+  createNodeServer,
+  createSQLiteStore,
+} from "@auththread/runtime-node";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWebhookSink } from "@auththread/sink-webhook";
 import { createWideEventSink } from "@auththread/sink-wide-event";
@@ -55,13 +59,21 @@ const sinks = (): Sink[] => {
   return all;
 };
 
+const quietMs = Number(env("AUTHTHREAD_QUIET_MS") ?? "600000");
+const dbPath = env("AUTHTHREAD_DB");
+const sqlite =
+  dbPath === undefined ? null : createSQLiteStore({ path: dbPath, quietMs });
+
 const server = createNodeServer({
   providers: [oidcAdapter, auth0Adapter],
   sinks: sinks(),
   settings: createFileSettings(
     env("AUTHTHREAD_CONFIG") ?? "/etc/auththread/config.json",
   ),
-  quietMs: Number(env("AUTHTHREAD_QUIET_MS") ?? "600000"),
+  quietMs,
+  ...(sqlite === null
+    ? {}
+    : { buffer: sqlite.buffer, scheduler: sqlite.scheduler }),
   onError: (error) => console.error("auththread:", error),
 });
 
@@ -70,7 +82,10 @@ const { port: bound } = await server.listen(port);
 console.log(`auththread listening on :${bound}`);
 
 const stop = (): void => {
-  void server.close().then(() => process.exit(0));
+  void server.close().then(() => {
+    sqlite?.close();
+    process.exit(0);
+  });
 };
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);
