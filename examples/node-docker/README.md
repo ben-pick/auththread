@@ -21,3 +21,6 @@ plain VM. Point the browser SDK and provider feeds at the public URL.
 
 Configuration is validated at startup. A tenant needs `salt` and either `apiKey` or
 `apiKeyHash`. The raw key is hashed in memory and never stored.
+
+For local testing, set `AUTHTHREAD_QUIET_MS=1000` so a journey finalises a second after the
+last item instead of ten minutes.
