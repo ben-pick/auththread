@@ -455,11 +455,11 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 20 test files, 103 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 21 test files, 105 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | 3,486 bytes gzipped, build fails above 5 KB (**measured**) |
+| Browser budget | SDK 2,651 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |
