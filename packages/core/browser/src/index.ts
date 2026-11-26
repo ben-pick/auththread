@@ -2,6 +2,7 @@ import {
   type Attributes,
   type AuthUiStep,
   isTraceId,
+  type JourneyKind,
   newSpanId,
   newTraceId,
   rootSpanId,
@@ -23,10 +24,18 @@ export interface BrowserOptions {
   readonly key: string;
   readonly tenant: string;
   readonly provider: BrowserProvider;
+  /** Defaults to login. */
+  readonly kind?: JourneyKind;
+  /** Spans per request before an automatic flush. Default 20. */
+  readonly batchSize?: number;
+  /** Maximum time a span waits before a flush. Default 1000 ms. */
+  readonly flushIntervalMs?: number;
   readonly storage?: StorageLike;
   readonly now?: () => number;
   readonly send?: (body: string) => void;
   readonly fetchImpl?: typeof fetch;
+  readonly setTimer?: (callback: () => void, ms: number) => unknown;
+  readonly clearTimer?: (handle: unknown) => void;
 }
 
 export interface CallbackResult {
@@ -40,6 +49,8 @@ export interface AuthThreadBrowser {
   callback(url: string | URL): CallbackResult;
   tokenExchange(durationMs: number): void;
   abandon(step: AuthUiStep): void;
+  /** Sends every queued span now. Called automatically on a batch or a page hide. */
+  flush(): void;
 }
 
 const TRACE_KEY = "auththread.trace";
@@ -93,6 +104,15 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
   const storage = safeStorage(options.storage);
   const now = options.now ?? (() => Date.now());
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const batchSize = options.batchSize ?? 20;
+  const setTimer =
+    options.setTimer ??
+    ((callback: () => void, ms: number) => setTimeout(callback, ms));
+  const clearTimer =
+    options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as never));
+
+  let queue: unknown[] = [];
+  let timer: unknown = null;
 
   const stored = storage.getItem(TRACE_KEY);
   let current: TraceId | null =
@@ -145,13 +165,39 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
   };
 
   const emit = (span: unknown): void => {
-    send(JSON.stringify({ spans: [span] }));
+    queue.push(span);
+    if (queue.length >= batchSize) flush();
+    else schedule();
   };
+
+  function flush(): void {
+    if (timer !== null) {
+      clearTimer(timer);
+      timer = null;
+    }
+    if (queue.length === 0) return;
+    const spans = queue;
+    queue = [];
+    send(JSON.stringify({ spans }));
+  }
+
+  function schedule(): void {
+    if (timer !== null) return;
+    timer = setTimer(() => {
+      timer = null;
+      flush();
+    }, options.flushIntervalMs ?? 1000);
+  }
 
   const base: Attributes = {
     "auth.provider": options.provider.id,
     "auth.tenant": options.tenant,
+    "auth.journey.kind": options.kind ?? "login",
   };
+
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("pagehide", () => flush());
+  }
 
   return {
     traceId: () => trace(),
@@ -166,6 +212,7 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
           code: "unset",
         }),
       );
+      flush();
       return options.provider.authorizeParams(id);
     },
 
@@ -199,10 +246,13 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
             : { code: "error", message: failure },
         ),
       );
+      flush();
       return failure === undefined
         ? { ok: true }
         : { ok: false, error: failure };
     },
+
+    flush,
 
     tokenExchange(durationMs) {
       const finishedAt = now();

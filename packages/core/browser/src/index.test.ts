@@ -150,6 +150,7 @@ describe("browser SDK", () => {
 
     client.tokenExchange(120);
     client.abandon("mfa_challenge");
+    client.flush();
 
     expect(sent[0]).toMatchObject({
       name: "auth.app.token_exchange",
@@ -157,6 +158,54 @@ describe("browser SDK", () => {
       startMs: 880,
     });
     expect(sent[1]?.attributes["auth.abandoned_at"]).toBe("mfa_challenge");
+  });
+
+  it("batches spans until the size or a flush", () => {
+    const batches: Span[][] = [];
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      batchSize: 5,
+      storage: storage(),
+      setTimer: () => 1,
+      clearTimer: () => undefined,
+      send: (body: string) => {
+        batches.push((JSON.parse(body) as { spans: Span[] }).spans);
+      },
+    });
+
+    client.tokenExchange(10);
+    client.tokenExchange(20);
+    client.tokenExchange(30);
+    expect(batches).toEqual([]);
+
+    client.flush();
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.map((span) => span.name)).toEqual([
+      "auth.app.token_exchange",
+      "auth.app.token_exchange",
+      "auth.app.token_exchange",
+    ]);
+  });
+
+  it("tags the journey kind", () => {
+    const sent: Span[] = [];
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      kind: "signup",
+      storage: storage(),
+      send: (body: string) => {
+        sent.push(...(JSON.parse(body) as { spans: Span[] }).spans);
+      },
+    });
+
+    client.authorizeParams();
+    expect(sent[0]?.attributes["auth.journey.kind"]).toBe("signup");
   });
 
   it("survives a send failure", () => {
