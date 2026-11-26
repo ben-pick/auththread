@@ -13,7 +13,7 @@ import {
   createDurableObjectBuffer,
   type DurableObjectStorageLike,
 } from "@auththread/runtime-cloudflare";
-import { sha256Hex } from "@auththread/schema";
+import { sha256Hex, toWideEvent } from "@auththread/schema";
 import { Stitcher, stitcherLayer } from "@auththread/stitcher";
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
@@ -71,21 +71,7 @@ const stitcherOn = (
           sinkId: "capture",
           journeyId: journey.traceId,
           spans: [journey.root, ...journey.spans],
-          wideEvent: {
-            schemaVersion: "1",
-            event: "auth.journey",
-            traceId: journey.traceId,
-            spanId: journey.root.spanId,
-            kind: journey.kind,
-            outcome: journey.outcome,
-            provider: journey.provider,
-            tenant: journey.tenant,
-            startedAt: new Date(journey.startedAt).toISOString(),
-            durationMs: journey.endedAt - journey.startedAt,
-            attributes: journey.root.attributes,
-            steps: [],
-            correlationCounts: { exact: 0, inferred: 0 },
-          },
+          wideEvent: toWideEvent(journey),
         }),
         write: () => Effect.void,
       },

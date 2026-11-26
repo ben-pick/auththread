@@ -63,6 +63,7 @@ describe("createS3Store", () => {
       expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
       expect(headers["content-type"]).toBe("application/x-ndjson");
       expect(calls[0]?.init.method).toBe("PUT");
+      expect(calls[0]?.init.signal).toBeInstanceOf(AbortSignal);
     }),
   );
 

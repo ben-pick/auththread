@@ -185,11 +185,12 @@ export const createS3Store = (options: S3StoreOptions): ObjectStore => {
 
         const { host: _host, ...headers } = signed;
         const response = yield* Effect.tryPromise({
-          try: () =>
+          try: (signal) =>
             fetchImpl(url, {
               method: "PUT",
               headers: { ...headers, "content-type": contentType },
               body,
+              signal,
             }),
           catch: (cause) =>
             new SinkError({
