@@ -28,6 +28,12 @@ export const Auth0FeedSettingsSchema = Schema.Struct({
 export const AUTH0_FEED_PATH = "/log-stream";
 export const AUTH0_FEED_SECRET_HEADER = "x-auththread-feed-secret";
 
+const bearer = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
+  const match = /^Bearer\s+(.+)$/i.exec(value.trim());
+  return match?.[1];
+};
+
 const NEUTRAL_TYPE: Record<string, string> = {
   s: "login_success",
   ss: "signup_success",
@@ -191,7 +197,9 @@ export const verifyLogStream = (
   Effect.succeed(
     settings.feedSecret !== undefined &&
       settings.feedSecret.length > 0 &&
-      request.headers[AUTH0_FEED_SECRET_HEADER] === settings.feedSecret,
+      (request.headers[AUTH0_FEED_SECRET_HEADER] === settings.feedSecret ||
+        request.headers.authorization === settings.feedSecret ||
+        bearer(request.headers.authorization) === settings.feedSecret),
   );
 
 export function classifyAuth0Type(code: string): {
