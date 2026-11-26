@@ -1,0 +1,23 @@
+{
+  "name": "@auththread/example-cloudflare-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node -e \"console.log('no tests')\""
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:*",
+    "@auththread/auth0": "workspace:*",
+    "@auththread/oidc": "workspace:*",
+    "@auththread/runtime-cloudflare": "workspace:*",
+    "@auththread/schema": "workspace:*",
+    "@auththread/sink-otlp": "workspace:*",
+    "@auththread/sink-wide-event": "workspace:*",
+    "@auththread/otlp": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}

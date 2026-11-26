@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "auththread",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "JOURNEY", "class_name": "JourneyDurableObject" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["JourneyDurableObject"] }
+  ],
+  "observability": { "enabled": true }
+}

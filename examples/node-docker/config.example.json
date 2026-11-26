@@ -1,0 +1,21 @@
+{
+  "tenants": [
+    {
+      "tenant": "acme",
+      "provider": "auth0",
+      "apiKey": "at_live_replace_me",
+      "salt": "replace with a long random per tenant value",
+      "providerSettings": {
+        "feedSecret": "replace with the log stream header value",
+        "domain": "acme.eu.auth0.com",
+        "managementToken": ""
+      }
+    },
+    {
+      "tenant": "keycloak",
+      "provider": "oidc",
+      "apiKey": "at_live_keycloak",
+      "salt": "another long random per tenant value"
+    }
+  ]
+}

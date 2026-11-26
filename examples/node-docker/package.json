@@ -1,0 +1,24 @@
+{
+  "name": "@auththread/example-node-docker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node src/main.ts",
+    "test": "node -e \"console.log('no tests')\""
+  },
+  "dependencies": {
+    "@auththread/auth0": "workspace:*",
+    "@auththread/oidc": "workspace:*",
+    "@auththread/otlp": "workspace:*",
+    "@auththread/runtime-node": "workspace:*",
+    "@auththread/sink-otlp": "workspace:*",
+    "@auththread/sink-webhook": "workspace:*",
+    "@auththread/sink-wide-event": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

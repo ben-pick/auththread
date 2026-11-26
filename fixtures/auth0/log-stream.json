@@ -1,0 +1,24 @@
+[
+  {
+    "log_id": "64f0c1e2a1b2c3d4",
+    "date": "2026-11-26T10:00:00.000Z",
+    "type": "fp",
+    "description": "Wrong email or password",
+    "connection": "Username-Password-Authentication",
+    "client_id": "client_abc",
+    "user_id": "auth0|64f0",
+    "user_name": "redacted@example.com",
+    "details": { "error": { "message": "Wrong email or password" } }
+  },
+  {
+    "log_id": "64f0c1e2a1b2c3d5",
+    "date": "2026-11-26T10:00:12.000Z",
+    "type": "s",
+    "description": "Successful login",
+    "connection": "Username-Password-Authentication",
+    "client_id": "client_abc",
+    "user_id": "auth0|64f0",
+    "user_name": "redacted@example.com",
+    "details": { "ext_trace_id": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }
+  }
+]

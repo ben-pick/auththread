@@ -1,0 +1,10 @@
+{
+  "tenants": [
+    {
+      "tenant": "keycloak",
+      "provider": "oidc",
+      "apiKey": "at_demo",
+      "salt": "keycloak-demo-salt-change-me"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>auththread Keycloak example</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 4rem auto; max-width: 34rem; padding: 0 1rem; }
+      button { font-size: 1rem; padding: 0.6rem 1rem; cursor: pointer; }
+      code { background: #f2f2f2; padding: 0.1rem 0.3rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>auththread + Keycloak</h1>
+    <p>Sign in as <code>demo</code> with password <code>demo</code>. Open Grafana on
+      <code>localhost:3000</code> and look for the <code>auth.journey</code> log line.</p>
+    <button id="login" type="button">Sign in</button>
+    <p id="status">Loading.</p>
+    <script src="/app.js"></script>
+  </body>
+</html>
