@@ -163,9 +163,8 @@ const stitcher = stitcherLayer({
   ),
 );
 
-const server = httpRoutes.pipe(
+const server = nodeServerLayer({ port: 8787 }).pipe(
   Layer.provide(stitcher),
-  Layer.provide(NodeHttpServer.layer(createServer, { port: 8787 })),
 );
 
 Layer.launch(server).pipe(NodeRuntime.runMain);

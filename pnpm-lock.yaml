@@ -331,6 +331,9 @@ importers:
       '@auththread/sink-wide-event':
         specifier: workspace:*
         version: link:../../packages/sinks/wide-event
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.1.2(effect@4.1.2)(redis@6.4.0)
       effect:
         specifier: 'catalog:'
         version: 4.1.2

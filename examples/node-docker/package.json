@@ -16,6 +16,7 @@
     "@auththread/sink-otlp": "workspace:*",
     "@auththread/sink-webhook": "workspace:*",
     "@auththread/sink-wide-event": "workspace:*",
+    "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
