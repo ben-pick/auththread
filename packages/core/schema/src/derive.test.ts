@@ -129,6 +129,37 @@ describe("buildJourney", () => {
     expect(a.root.attributes["auth.method"]).toBe("password");
   });
 
+  it("keeps the explicit kind and defaults to login", () => {
+    const signedUp = buildJourney({
+      traceId,
+      provider: "oidc",
+      tenant: "acme",
+      spans: [loginStart, screen],
+      events: [event({ type: "signup_success" })],
+    });
+    expect(signedUp.kind).toBe("signup");
+    expect(signedUp.root.attributes["auth.journey.kind"]).toBe("signup");
+
+    const explicit = buildJourney({
+      traceId,
+      provider: "oidc",
+      tenant: "acme",
+      kind: "step_up",
+      spans: [loginStart],
+      events: [event({ type: "signup_success" })],
+    });
+    expect(explicit.kind).toBe("step_up");
+
+    const login = buildJourney({
+      traceId,
+      provider: "oidc",
+      tenant: "acme",
+      spans: [loginStart],
+      events: [event({})],
+    });
+    expect(login.kind).toBe("login");
+  });
+
   it("collapses conflicting methods instead of picking one", () => {
     const other = span({
       spanId: parseSpanId("7777777777777777"),

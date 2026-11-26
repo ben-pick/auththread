@@ -4,6 +4,7 @@ export const NEUTRAL_ATTRIBUTES = [
   "auth.provider",
   "auth.tenant",
   "auth.client_id",
+  "auth.journey.kind",
   "auth.user.hash",
   "auth.method",
   "auth.method.vendor_name",
@@ -30,6 +31,9 @@ export type AttributeValue = string | number | boolean | readonly string[];
 
 /** Open map: neutral keys are typed, and OTel keys such as service.name pass through. */
 export type Attributes = Readonly<Record<string, AttributeValue>>;
+
+export const JOURNEY_KINDS = ["login", "signup", "reset", "step_up"] as const;
+export type JourneyKind = (typeof JOURNEY_KINDS)[number];
 
 export const AUTH_METHODS = [
   "password",
@@ -101,6 +105,8 @@ const has = <T extends string>(
 
 export const isOutcome = (value: unknown): value is Outcome =>
   has(AUTH_OUTCOMES, value);
+export const isJourneyKind = (value: unknown): value is JourneyKind =>
+  has(JOURNEY_KINDS, value);
 export const isAuthMethod = (value: unknown): value is AuthMethod =>
   has(AUTH_METHODS, value);
 export const isAuthUiStep = (value: unknown): value is AuthUiStep =>

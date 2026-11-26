@@ -3,7 +3,9 @@ import {
   type AuthAttribute,
   isAuthHookDecision,
   isAuthUiStep,
+  isJourneyKind,
   isOutcome,
+  type JourneyKind,
   type Outcome,
   SPAN_NAMES,
 } from "./attributes.ts";
@@ -25,6 +27,7 @@ const ROOT_ATTRIBUTE_KEYS = [
   "auth.tenant",
   "auth.client_id",
   "auth.method",
+  "auth.journey.kind",
   "auth.user.hash",
 ] as const satisfies readonly AuthAttribute[];
 
@@ -81,6 +84,19 @@ export function deriveOutcome(
   return "abandoned";
 }
 
+export function deriveKind(
+  spans: readonly Span[],
+  events: readonly ProviderEvent[],
+): JourneyKind {
+  const explicit = spans
+    .map((span) => span.attributes["auth.journey.kind"])
+    .find(isJourneyKind);
+  if (explicit !== undefined) return explicit;
+
+  if (events.some((event) => event.type.startsWith("signup_"))) return "signup";
+  return "login";
+}
+
 function consistentValue(
   spans: readonly Span[],
   key: AuthAttribute,
@@ -125,6 +141,8 @@ export interface BuildJourneyInput {
   readonly traceId: TraceId;
   readonly provider: string;
   readonly tenant: string;
+  /** Defaults to the explicit span attribute, then a signup event, then login. */
+  readonly kind?: JourneyKind;
   readonly spans: readonly Span[];
   readonly events: readonly ProviderEvent[];
 }
@@ -133,6 +151,7 @@ export function buildJourney(input: BuildJourneyInput): Journey {
   const buffered = sortSpans(input.spans);
   const events = sortEvents(input.events);
   const outcome = deriveOutcome(buffered, events);
+  const kind = input.kind ?? deriveKind(buffered, events);
   const joined: JoinedEvent[] = events.map((event) => ({
     event,
     correlation: event.traceId === input.traceId ? "exact" : "inferred",
@@ -175,6 +194,7 @@ export function buildJourney(input: BuildJourneyInput): Journey {
     ...aggregateRootAttributes(spans),
     "auth.provider": input.provider,
     "auth.tenant": input.tenant,
+    "auth.journey.kind": kind,
     "auth.outcome": outcome,
   };
 
@@ -196,6 +216,7 @@ export function buildJourney(input: BuildJourneyInput): Journey {
     root,
     provider: input.provider,
     tenant: input.tenant,
+    kind,
     outcome,
     startedAt,
     endedAt,

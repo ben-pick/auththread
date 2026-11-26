@@ -90,8 +90,37 @@ describe("withTrace", () => {
     expect(body.spans[0]?.attributes).toMatchObject({
       "auth.hook.name": "enrich-profile",
       "auth.hook.version": "v7",
+      "auth.hook.stage": "post_auth",
       "auth.hook.decision": "continue",
       "auth.hook.claims_set": ["https://x/roles"],
+    });
+  });
+
+  it("uses the configured stage and kind for non-login triggers", async () => {
+    const bodies: string[] = [];
+    const wrapped = withTrace(
+      {
+        name: "notify-signup",
+        version: "v1",
+        stage: "pre_signup",
+        kind: "signup",
+        transport: "http",
+        endpoint: "https://stitcher.example.com",
+        fetchImpl: (async (_url, init) => {
+          bodies.push(String(init?.body));
+          return new Response("{}", { status: 202 });
+        }) as typeof fetch,
+      },
+      () => undefined,
+    );
+
+    await wrapped({ request: { query: { ext_trace_id: TRACE } } }, {});
+    const body = JSON.parse(bodies[0] ?? "{}") as {
+      spans: Array<{ attributes: Record<string, unknown> }>;
+    };
+    expect(body.spans[0]?.attributes).toMatchObject({
+      "auth.hook.stage": "pre_signup",
+      "auth.journey.kind": "signup",
     });
   });
 

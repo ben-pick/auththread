@@ -8,6 +8,7 @@ export type {
   AuthMethod,
   AuthUiStep,
   CorrelationKind,
+  JourneyKind,
   Outcome,
   SpanName,
 } from "./attributes.ts";
@@ -26,7 +27,9 @@ export {
   isAuthMethod,
   isAuthUiStep,
   isCorrelationKind,
+  isJourneyKind,
   isOutcome,
+  JOURNEY_KINDS,
   NEUTRAL_ATTRIBUTES,
   SPAN_NAMES,
 } from "./attributes.ts";
@@ -34,6 +37,7 @@ export { compareStrings } from "./compare.ts";
 export type { BuildJourneyInput } from "./derive.ts";
 export {
   buildJourney,
+  deriveKind,
   deriveOutcome,
   sortEvents,
   sortSpans,

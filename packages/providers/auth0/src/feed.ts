@@ -88,6 +88,7 @@ export function parseLogStream(
     const connection =
       typeof log.connection === "string" ? log.connection : undefined;
     const neutral = NEUTRAL_TYPE[type] ?? "provider_event";
+    const kind = neutral.startsWith("signup_") ? "signup" : undefined;
     const traceId = readTraceId(details);
 
     return [
@@ -106,6 +107,7 @@ export function parseLogStream(
         },
         attributes: {
           "auth.provider": "auth0",
+          ...(kind === undefined ? {} : { "auth.journey.kind": kind }),
           ...(clientId === undefined ? {} : { "auth.client_id": clientId }),
           ...(connection === undefined
             ? {}

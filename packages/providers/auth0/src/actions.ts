@@ -1,5 +1,7 @@
 import {
+  type AuthHookStage,
   isTraceId,
+  type JourneyKind,
   parseTraceId,
   rootSpanId,
   sha256Hex,
@@ -8,6 +10,8 @@ import {
 export interface ActionTraceOptions {
   readonly name: string;
   readonly version: string;
+  readonly stage?: AuthHookStage;
+  readonly kind?: JourneyKind;
   readonly transport?: "console" | "http";
   readonly endpoint?: string;
   readonly token?: string;
@@ -141,10 +145,11 @@ export function withTrace<Event, Api, Result>(
           durationMs: Date.now() - startedAt,
           attributes: {
             "auth.provider": "auth0",
+            "auth.journey.kind": options.kind ?? "login",
             "auth.hook.name": options.name,
             "auth.hook.type": "auth0.action",
             "auth.hook.version": options.version,
-            "auth.hook.stage": "post_auth",
+            "auth.hook.stage": options.stage ?? "post_auth",
             "auth.hook.decision": decision(recorded),
             ...(recorded.claims.length === 0
               ? {}

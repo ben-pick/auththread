@@ -60,6 +60,12 @@ describe("parseLogStream", () => {
     expect(event?.type).toBe("login_success");
   });
 
+  it("marks a signup event as a signup journey", () => {
+    const [event] = parseLogStream(log({ type: "ss" }), { hashUser });
+    expect(event?.type).toBe("signup_success");
+    expect(event?.attributes["auth.journey.kind"]).toBe("signup");
+  });
+
   it("accepts arrays and batches, and skips malformed entries", () => {
     expect(
       parseLogStream([log(), log({ log_id: "other" })], { hashUser }),

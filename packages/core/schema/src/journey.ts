@@ -1,6 +1,7 @@
 import type {
   Attributes,
   CorrelationKind,
+  JourneyKind,
   Outcome,
   SpanName,
 } from "./attributes.ts";
@@ -38,6 +39,7 @@ export interface Journey {
   readonly root: Span;
   readonly provider: string;
   readonly tenant: string;
+  readonly kind: JourneyKind;
   readonly outcome: Outcome;
   readonly startedAt: number;
   readonly endedAt: number;
