@@ -83,6 +83,79 @@ ORDER BY (tenant, started_at, journey_id)
 AS SELECT * FROM s3('...', 'JSONEachRow');
 ```
 
+## DuckDB
+
+DuckDB reads these files directly. No ingestion, no extension beyond `httpfs`.
+
+```sql
+INSTALL httpfs;
+LOAD httpfs;
+
+CREATE OR REPLACE SECRET auththread_r2 (
+  TYPE S3,
+  KEY_ID '<access_key>',
+  SECRET '<secret_key>',
+  REGION 'auto',
+  ENDPOINT '<account>.r2.cloudflarestorage.com',
+  URL_STYLE 'path',
+  USE_SSL true
+);
+
+SELECT
+  dt,
+  hour,
+  attributes->>'auth.method' AS method,
+  outcome,
+  count(*) AS journeys
+FROM read_ndjson(
+  's3://auththread/auththread/dt=*/hour=*/*.ndjson',
+  hive_partitioning = true,
+  columns = {
+    schemaVersion: 'VARCHAR',
+    event: 'VARCHAR',
+    traceId: 'VARCHAR',
+    spanId: 'VARCHAR',
+    kind: 'VARCHAR',
+    outcome: 'VARCHAR',
+    provider: 'VARCHAR',
+    tenant: 'VARCHAR',
+    startedAt: 'TIMESTAMP',
+    durationMs: 'BIGINT',
+    attributes: 'JSON',
+    steps: 'JSON',
+    correlationCounts: 'JSON'
+  }
+)
+GROUP BY dt, hour, method, outcome;
+```
+
+`attributes->>'auth.method'` is deliberate. `json_extract(attributes, '$.auth.method')`
+treats the dot inside `auth.method` as a nested path and returns NULL. The arrow operator, or
+`json_extract(attributes, '$."auth.method"')`, reads the dotted key. This was the only
+surprise in local testing.
+
+Auto inference also works and turns `attributes` into a struct union across files:
+
+```sql
+SELECT traceId, outcome, attributes."auth.method" AS method
+FROM read_ndjson('s3://auththread/auththread/dt=*/hour=*/*.ndjson');
+```
+
+For `steps`:
+
+```sql
+SELECT traceId, step->>'name' AS step, step->>'errorCode' AS error_code
+FROM read_ndjson('...', columns = { traceId: 'VARCHAR', steps: 'JSON' }),
+UNNEST(json_extract(steps, '$[*]')) AS t(step);
+```
+
+Local development works the same way with a path instead of `s3://`.
+
+Verified with DuckDB 1.4.5 against the sink's NDJSON shape, including hive partition columns
+(`dt`, `hour`), JSON `attributes`, and `steps`. DuckDB reads whole NDJSON files, so it has no
+predicate pushdown until the object format becomes Parquet. The 1000 row / 5 MB batches keep
+that reasonable.
+
 ## Limits
 
 - NDJSON text only in v0.1. Parquet is a later change, and it will extend the `ObjectStore`
