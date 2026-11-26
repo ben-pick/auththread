@@ -16,7 +16,6 @@
     "boundaries": "depcruise --config .dependency-cruiser.cjs packages",
     "agents:check": "node packages/tooling/agents/src/cli.ts check",
     "agents:index": "node packages/tooling/agents/src/cli.ts index",
-    "gen": "node packages/tooling/generators/src/cli.ts",
     "demo": "node scripts/demo.ts",
     "smoke": "node scripts/smoke.ts",
     "probe:auth0": "node scripts/auth0-probe.ts",
