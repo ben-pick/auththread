@@ -5,7 +5,7 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 25 test files, 137 tests, no violations.
+actionlint and the agent file checks. The suite is green and `pnpm boundaries` is clean.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
@@ -21,10 +21,14 @@ actionlint and the agent file checks. Current result: 25 test files, 137 tests, 
 - **Redaction.** Tests cover secret keys, hashed identifiers, missing salt, email and JWT
   stripping, and assert raw identifiers never reach a sink.
 - **Bundle budgets.** `pnpm budget` runs in `pnpm check` and fails above either budget. The
-  browser SDK alone, without demo app code, is 2,659 bytes gzipped against 5 KB. The page
-  snippet as shipped is 936 bytes gzipped against 8 KB. The Keycloak example app is measured
-  at 3,479 bytes gzipped and reported without a budget, because it contains the demo's own
-  page code.
+  browser SDK is bundled alone, without demo app code, and must stay under 5 KB gzipped. The
+  page snippet as shipped must stay under 8 KB. The Keycloak example app is measured and
+  reported without a budget, because it contains the demo's own page code. Run `pnpm budget`
+  for the current sizes. `pnpm budget --base <ref> --format markdown` measures the base in a
+  detached worktree and prints the gzipped, minified, budget and change columns. CI uploads
+  that markdown and a separate no-checkout job posts one sticky comment; the report is
+  informational and the budget gate stays in `pnpm check`. BundleMon was not adopted; see
+  [ADR-0011](decisions/0011-bundle-size-pr-report.md).
 - **Provider conformance.** OIDC and Auth0 pass `runProviderConformance` against recorded
   payloads, including an adapter that must fail.
 - **Runtime conformance.** Memory, Node timer, SQLite and Durable Object alarm runtimes pass
@@ -47,7 +51,7 @@ actionlint and the agent file checks. Current result: 25 test files, 137 tests, 
   sends `auth.transaction.id`, the feed parses `details.transaction_id`, and the stitcher
   joins exactly per tenant. Tests cover failure then success, success then failure, pending
   adoption by transaction, and a transaction lookup outside the window.
-- **Boundaries.** `pnpm boundaries` reports no violation across 97 modules.
+- **Boundaries.** `pnpm boundaries` reports no violation.
 - **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
   unknown keys, and refuses a directory with a shared key or duplicate tenant.
 
@@ -111,7 +115,8 @@ After the review, three changes landed:
   and the root span. The Auth0 feed marks signup events, the Action wrapper takes a `stage`
   and `kind`, and the browser SDK takes a `kind`.
 - The browser SDK batches spans, flushes on the redirect, the callback and a page hide, and
-  measures 2,659 bytes gzipped on its own. The page snippet is 936 bytes gzipped.
+  stays under the browser budget when measured on its own. The page snippet is measured as
+  shipped and stays under its own budget.
 - The Cloudflare Worker resolves the API key with `createKeyDirectory` and routes to one
   Durable Object per tenant, so tenant state is isolated before ingest.
 
