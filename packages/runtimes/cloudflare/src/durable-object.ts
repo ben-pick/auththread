@@ -15,6 +15,7 @@ import {
   createAlarmScheduler,
   createDurableObjectBuffer,
   type DurableObjectStateLike,
+  type DurableObjectStorageLike,
 } from "./storage.ts";
 
 export interface JourneyDurableObjectOptions
@@ -36,29 +37,61 @@ export interface JourneyDurableObjectInstance {
  * Returns the class a Worker exports as its Durable Object. The whole stitcher
  * lives here, so the buffer, the join and the timer share one consistent store.
  */
+const FLUSH_RETRY_MS = 60_000;
+
+const report = (
+  options: JourneyDurableObjectOptions,
+  cause: unknown,
+): Effect.Effect<void> =>
+  options.onError === undefined
+    ? Effect.logError(cause)
+    : options.onError(cause);
+
 const flushSinks = (
   options: JourneyDurableObjectOptions,
-): Effect.Effect<void> =>
+): Effect.Effect<boolean> =>
   Effect.forEach(
     options.sinks,
     (sink) =>
       (sink.flush ?? Effect.void).pipe(
+        Effect.as(true),
         Effect.catchCause((cause) =>
-          options.onError === undefined
-            ? Effect.logError(cause)
-            : options.onError(cause),
+          Effect.andThen(report(options, cause), Effect.succeed(false)),
         ),
       ),
-    { discard: true },
-  );
+    { concurrency: 1 },
+  ).pipe(Effect.map((results) => results.every(Boolean)));
+
+const scheduleFlushRetry = (
+  storage: DurableObjectStorageLike,
+  nowMs: number,
+  options: JourneyDurableObjectOptions,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const retryAt = nowMs + FLUSH_RETRY_MS;
+    const getAlarm = storage.getAlarm;
+    if (getAlarm !== undefined) {
+      const current = yield* Effect.tryPromise({
+        try: () => getAlarm.call(storage),
+        catch: (cause) => cause,
+      });
+      if (current !== null && current <= retryAt) return;
+    }
+    yield* Effect.tryPromise({
+      try: () => storage.setAlarm(retryAt),
+      catch: (cause) => cause,
+    });
+  }).pipe(Effect.catchCause((cause) => report(options, cause)));
 
 export const createJourneyDurableObject = (
   options: JourneyDurableObjectOptions,
 ) => {
   return class JourneyDurableObject implements JourneyDurableObjectInstance {
     readonly runtime: ManagedRuntime.ManagedRuntime<Stitcher, never>;
+    readonly storage: DurableObjectStorageLike;
 
     constructor(state: DurableObjectStateLike) {
+      this.storage = state.storage;
       const buffer = createDurableObjectBuffer(state.storage);
       const scheduler: AlarmScheduler = createAlarmScheduler(
         state.storage,
@@ -104,12 +137,16 @@ export const createJourneyDurableObject = (
     }
 
     alarm(): Promise<void> {
+      const storage = this.storage;
       return this.runtime.runPromise(
         Effect.gen(function* () {
           const stitcher = yield* Stitcher;
           const nowMs = yield* options.now ?? Clock.currentTimeMillis;
           yield* stitcher.runDue(nowMs);
-          yield* flushSinks(options);
+          const flushed = yield* flushSinks(options);
+          if (!flushed) {
+            yield* scheduleFlushRetry(storage, nowMs, options);
+          }
         }),
       );
     }

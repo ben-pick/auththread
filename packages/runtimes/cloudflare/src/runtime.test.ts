@@ -2,6 +2,7 @@ import {
   journeyCorpus,
   runEndToEndConformance,
   runRuntimeConformance,
+  SinkError,
   StitcherUnderTest,
   StorageError,
   staticSettingsLayer,
@@ -218,6 +219,88 @@ describe("durable object runtime", () => {
       expect(batches[0]?.wideEvent?.outcome).toBe("abandoned");
       expect(storage.alarmAt).toBeNull();
       expect(flushes).toBeGreaterThan(0);
+    }),
+  );
+
+  it.effect("schedules a retry when the alarm-time sink flush fails", () =>
+    Effect.gen(function* () {
+      const storage = new FakeStorage();
+      let now = fixture.nowMs;
+      const DurableObject = createJourneyDurableObject({
+        providers: [],
+        sinks: [
+          {
+            id: "capture",
+            accepts: ["journey"],
+            sampling: { keep: ["all"], successRate: 1 },
+            render: (journey) => ({
+              sinkId: "capture",
+              journeyId: journey.traceId,
+              wideEvent: toWideEvent(journey),
+            }),
+            write: () => Effect.void,
+            flush: Effect.fail(
+              new SinkError({ sink: "capture", message: "flush failed" }),
+            ),
+          },
+        ],
+        settings: settingsLayer,
+        quietMs: 60_000,
+        now: Effect.sync(() => now),
+        onError: () => Effect.void,
+      });
+      const instance = new DurableObject({ storage });
+
+      const payload = JSON.stringify({
+        resourceSpans: [
+          {
+            resource: { attributes: [] },
+            scopeSpans: [
+              {
+                scope: { name: "test" },
+                spans: [
+                  {
+                    traceId: fixture.traceId,
+                    spanId: "1111111111111111",
+                    name: "auth.app.login_start",
+                    kind: 1,
+                    startTimeUnixNano: String(
+                      BigInt(fixture.nowMs) * 1_000_000n,
+                    ),
+                    endTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
+                    attributes: [
+                      {
+                        key: "auth.provider",
+                        value: { stringValue: "oidc" },
+                      },
+                      { key: "auth.tenant", value: { stringValue: "acme" } },
+                    ],
+                    status: { code: 0 },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const response = yield* Effect.promise(() =>
+        instance.fetch(
+          new Request("https://do/v1/spans", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer at_test",
+              "content-type": "application/json",
+            },
+            body: payload,
+          }),
+        ),
+      );
+      expect(response.status).toBe(202);
+
+      now = fixture.nowMs + 61_000;
+      yield* Effect.promise(() => instance.alarm());
+      expect(storage.alarmAt).toBe(now + 60_000);
     }),
   );
 
