@@ -117,4 +117,6 @@ mise exec -- pnpm check   # typecheck, lint, tests, boundaries, agent files
 mise exec -- pnpm demo    # replay the corpus and print one journey
 ```
 
+`docs/verification.md` lists what v0.1 proved and what it did not.
+
 MIT licensed. DCO sign-off on every commit. See `CONTRIBUTING.md` and `SECURITY.md`.
