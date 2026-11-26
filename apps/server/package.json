@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
-    "test": "node -e \"console.log('no unit tests')\"",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache",
     "bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.mjs"
   },
   "dependencies": {
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "vitest": "catalog:"
   }
 }

@@ -18,6 +18,7 @@ RUN addgroup -g 10001 -S auththread && adduser -u 10001 -S auththread -G auththr
 RUN mkdir -p /var/lib/auththread && chown -R auththread:auththread /var/lib/auththread
 WORKDIR /app
 COPY --from=build /app/apps/server/dist/server.mjs ./server.mjs
+COPY LICENSE ./LICENSE
 USER auththread
 ENV NODE_ENV=production
 ENV PORT=8787

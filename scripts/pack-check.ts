@@ -144,6 +144,11 @@ const main = (): void => {
         const names = new Set(
           files.map((file) => file.replace(/^package\//, "")),
         );
+        assert(
+          names.has("README.md"),
+          `${entry.directory} is missing README.md`,
+        );
+        assert(names.has("LICENSE"), `${entry.directory} is missing LICENSE`);
         for (const required of entry.required) {
           assert(
             names.has(required),
@@ -157,6 +162,17 @@ const main = (): void => {
         assert(
           !files.some((file) => file.startsWith("package/src/")),
           `${entry.directory} packs TypeScript source`,
+        );
+
+        const packedLicense = execFileSync(
+          "tar",
+          ["-xOf", tarball, "package/LICENSE"],
+          { encoding: "utf8" },
+        );
+        assert(
+          packedLicense.trimEnd() ===
+            readFileSync(join(root, "LICENSE"), "utf8").trimEnd(),
+          `${entry.directory} ships a different LICENSE`,
         );
 
         const manifestText = readManifest(tarball);

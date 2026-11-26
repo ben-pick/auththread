@@ -16,7 +16,9 @@ relative `.ts` specifiers in declaration files to `.js`. This is required:
 `rewriteRelativeImportExtensions` rewrites JavaScript output but not `.d.ts`
 files, and consumers cannot resolve `.ts` imports from a published package.
 
-`pnpm pack:check` packs every public package, verifies the required files,
+`scripts/build-package.ts` also copies the root `LICENSE` into the package at
+pack time, so there are no checked-in copies to drift. `pnpm pack:check` packs
+every public package, verifies the required files and license text,
 rejects test files, source files, `workspace:`/`catalog:` protocols and `.ts`
 specifier leaks, then runs `publint`.
 

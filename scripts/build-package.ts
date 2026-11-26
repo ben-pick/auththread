@@ -1,11 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  copyFileSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { join, resolve } from "node:path";
 
 const root = process.cwd();
+const repoRoot = resolve(import.meta.dirname, "..");
 const dist = join(root, "dist");
 
 execFileSync("tsc", ["-p", "tsconfig.build.json"], { stdio: "inherit" });
+copyFileSync(join(repoRoot, "LICENSE"), join(root, "LICENSE"));
 
 const rewrite = (directory: string): void => {
   for (const entry of readdirSync(directory)) {
