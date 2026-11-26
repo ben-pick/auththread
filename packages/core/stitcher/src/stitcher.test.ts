@@ -223,6 +223,30 @@ describe("stitcher", () => {
     for (const value of piiCorpus) expect(text).not.toContain(value);
   });
 
+  it("does not finalise before the quiet period when a later span arrives first", async () => {
+    const stitcher = spawn();
+    const late = span({
+      spanId: parseSpanId("7777777777777777"),
+      name: "auth.app.login_start",
+      startMs: NOW + 1000,
+    });
+    const early = span({
+      spanId: parseSpanId("8888888888888888"),
+      name: "auth.ui.screen",
+      startMs: NOW,
+    });
+
+    await stitcher.ingestSpan(late, tenant);
+    await stitcher.ingestSpan(early, tenant);
+
+    await stitcher.runDue(NOW + 1001);
+    expect(stitcher.flush()).toHaveLength(0);
+    expect(stitcher.stats().finalised).toBe(0);
+
+    await stitcher.runDue(NOW + 3000);
+    expect(stitcher.flush()).toHaveLength(1);
+  });
+
   it("survives a sink that throws", async () => {
     const failing = createStitcher({
       providers: [adapter],

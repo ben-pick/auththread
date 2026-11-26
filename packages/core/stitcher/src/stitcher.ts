@@ -140,6 +140,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
   );
   const emitted: SinkBatch[] = [];
   const pending: PendingEvent[] = [];
+  const deadlines = new Map<TraceId, number>();
   let finalised = 0;
   let unmatchedDrops = 0;
   let writeErrors = 0;
@@ -178,6 +179,15 @@ export function createStitcher(options: StitcherOptions): Stitcher {
     }
   }
 
+  async function scheduleFinalise(
+    traceId: TraceId,
+    endMs: number,
+  ): Promise<void> {
+    const at = Math.max(deadlines.get(traceId) ?? 0, endMs + quietMs);
+    deadlines.set(traceId, at);
+    await options.scheduler.schedule(traceId, at);
+  }
+
   async function appendEvent(
     traceId: TraceId,
     event: ProviderEvent,
@@ -188,7 +198,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       atMs: event.atMs,
       event,
     });
-    await options.scheduler.schedule(traceId, event.atMs + quietMs);
+    await scheduleFinalise(traceId, event.atMs);
   }
 
   async function finalise(traceId: TraceId): Promise<void> {
@@ -198,6 +208,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       .map((item) => item.span);
     if (spans.length === 0) {
       await options.buffer.delete(traceId);
+      deadlines.delete(traceId);
       return;
     }
 
@@ -240,6 +251,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
     }
 
     await options.buffer.delete(traceId);
+    deadlines.delete(traceId);
     finalised += 1;
   }
 
@@ -259,10 +271,7 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       });
       await options.buffer.indexHints(span.traceId, hints, span.startMs);
       await adoptPending(span.traceId, hints, span.startMs);
-      await options.scheduler.schedule(
-        span.traceId,
-        span.startMs + span.durationMs + quietMs,
-      );
+      await scheduleFinalise(span.traceId, span.startMs + span.durationMs);
     },
 
     async ingestEvent(event, tenant) {
@@ -326,6 +335,9 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       }
 
       await options.buffer.prune(nowMs - ttlMs);
+      for (const [traceId, at] of deadlines) {
+        if (at < nowMs - ttlMs) deadlines.delete(traceId);
+      }
     },
 
     flush() {

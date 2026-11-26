@@ -144,6 +144,8 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
     callback(url) {
       const parsed = typeof url === "string" ? new URL(url) : url;
       const error = parsed.searchParams.get("error") ?? undefined;
+      const code = parsed.searchParams.get("code");
+      const failure = error ?? (code === null ? "missing_code" : undefined);
       const startedAt = Number(storage.getItem(STARTED_KEY) ?? String(now()));
       const finishedAt = now();
       emit(
@@ -154,16 +156,21 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
           Math.max(0, finishedAt - startedAt),
           {
             ...base,
-            ...(error === undefined
+            ...(failure === undefined
               ? {}
-              : { "auth.error.code": error, "auth.error.source": "provider" }),
+              : {
+                  "auth.error.code": failure,
+                  "auth.error.source": "provider",
+                }),
           },
-          error === undefined
+          failure === undefined
             ? { code: "ok" }
-            : { code: "error", message: error },
+            : { code: "error", message: failure },
         ),
       );
-      return error === undefined ? { ok: true } : { ok: false, error };
+      return failure === undefined
+        ? { ok: true }
+        : { ok: false, error: failure };
     },
 
     tokenExchange(durationMs) {

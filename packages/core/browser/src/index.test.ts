@@ -43,17 +43,51 @@ describe("browser SDK", () => {
     expect(second.traceId()).toBe(first.traceId());
 
     const result = second.callback(
-      "https://app.example.com/callback?error=access_denied",
+      "https://app.example.com/callback?code=abc&state=xyz",
     );
-    expect(result).toEqual({ ok: false, error: "access_denied" });
+    expect(result).toEqual({ ok: true });
 
     expect(sent.map((span) => span.name)).toEqual([
       "auth.app.login_start",
       "auth.app.callback",
     ]);
-    expect(sent[1]?.status.code).toBe("error");
-    expect(sent[1]?.attributes["auth.error.code"]).toBe("access_denied");
+    expect(sent[1]?.status.code).toBe("ok");
     expect(sent.every((span) => span.traceId === first.traceId())).toBe(true);
+  });
+
+  it("treats a callback with neither code nor error as a failure", () => {
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      storage: storage(),
+      send: () => undefined,
+    });
+
+    expect(client.callback("https://app.example.com/callback")).toEqual({
+      ok: false,
+      error: "missing_code",
+    });
+  });
+
+  it("records a provider error code", () => {
+    const sent: Span[] = [];
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      storage: storage(),
+      send: (body: string) => {
+        sent.push(...(JSON.parse(body) as { spans: Span[] }).spans);
+      },
+    });
+
+    expect(
+      client.callback("https://app.example.com/callback?error=access_denied"),
+    ).toEqual({ ok: false, error: "access_denied" });
+    expect(sent[0]?.attributes["auth.error.code"]).toBe("access_denied");
   });
 
   it("records a token exchange duration and an abandonment step", () => {
