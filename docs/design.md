@@ -307,13 +307,19 @@ rather than the exporter's. At high volume, sampling earlier is the escape hatch
 
 ### Node
 
-- Memory buffer and a `setTimeout` scheduler with unref'd timers.
-- Settings loaded once from a JSON file. Keys are hashed at startup.
+- Memory buffer by default, or SQLite in WAL mode when `AUTHTHREAD_DB` is set.
+- A `setTimeout` scheduler with unref'd timers. The SQLite store uses the same scheduler
+  contract and polls due deadlines, which also restores them at startup.
+- Items, hints, transactions, deadlines and trace owners are written in one
+  `BEGIN IMMEDIATE` transaction per append. A crash cannot leave an item without its index.
+- `close()` stops accepting, drains in-flight journeys, flushes sinks and closes the store.
+- Settings loaded once from a JSON file. Keys are hashed at startup; an empty key is rejected.
 - `node:http` adapted to `Request` and `Response`.
 - Docker image builds from the repo root.
 
 Missing from the plan's Node row: Redis buffer, SQLite or Postgres settings, multi-arch
-build proof. The memory buffer is single instance and loses data on restart.
+build proof, and schema migrations. SQLite removes the restart loss, but it is one writer:
+run one replica per database. The pending list is still per stitcher instance.
 
 ### Cloudflare
 
@@ -467,11 +473,11 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 23 test files, 120 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 24 test files, 129 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | SDK 2,651 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
+| Browser budget | SDK 2,659 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |

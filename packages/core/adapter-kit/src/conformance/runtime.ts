@@ -81,11 +81,11 @@ export async function runRuntimeConformance(
 
   await buffer.indexHints(
     fixture.traceId,
-    { userHash: "u_abc", clientId: "client_1" },
+    { tenant: fixture.tenant, userHash: "u_abc", clientId: "client_1" },
     fixture.nowMs,
   );
   const inside = await buffer.findCandidates(
-    { userHash: "u_abc" },
+    { tenant: fixture.tenant, userHash: "u_abc" },
     2000,
     fixture.nowMs + 1000,
   );
@@ -94,7 +94,7 @@ export async function runRuntimeConformance(
     "a hint inside the window found no candidate",
   );
   const outside = await buffer.findCandidates(
-    { userHash: "u_abc" },
+    { tenant: fixture.tenant, userHash: "u_abc" },
     2000,
     fixture.nowMs + 5000,
   );
@@ -103,9 +103,30 @@ export async function runRuntimeConformance(
     "a hint outside the window still found a candidate",
   );
   result.check(
-    (await buffer.findCandidates({ userHash: "u_none" }, 2000, fixture.nowMs))
-      .length === 0,
+    (
+      await buffer.findCandidates(
+        { tenant: fixture.tenant, userHash: "u_none" },
+        2000,
+        fixture.nowMs,
+      )
+    ).length === 0,
     "an unknown hint found a candidate",
+  );
+
+  await buffer.indexHints(
+    fixture.otherTraceId,
+    { tenant: fixture.tenant },
+    fixture.nowMs,
+  );
+  result.check(
+    (
+      await buffer.findCandidates(
+        { tenant: fixture.tenant, userHash: "u_abc" },
+        2000,
+        fixture.nowMs + 1000,
+      )
+    ).includes(fixture.otherTraceId) === false,
+    "a tenant-only index matched a user-hash query",
   );
 
   await buffer.indexHints(

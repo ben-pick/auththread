@@ -5,7 +5,7 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 23 test files, 120 tests, no violations.
+actionlint and the agent file checks. Current result: 24 test files, 129 tests, no violations.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
@@ -21,14 +21,18 @@ actionlint and the agent file checks. Current result: 23 test files, 120 tests, 
 - **Redaction.** Tests cover secret keys, hashed identifiers, missing salt, email and JWT
   stripping, and assert raw identifiers never reach a sink.
 - **Bundle budgets.** `pnpm budget` runs in `pnpm check` and fails above either budget. The
-  browser SDK alone, without demo app code, is 2,651 bytes gzipped against 5 KB. The page
+  browser SDK alone, without demo app code, is 2,659 bytes gzipped against 5 KB. The page
   snippet as shipped is 936 bytes gzipped against 8 KB. The Keycloak example app is measured
-  at 3,469 bytes gzipped and reported without a budget, because it contains the demo's own
+  at 3,479 bytes gzipped and reported without a budget, because it contains the demo's own
   page code.
 - **Provider conformance.** OIDC and Auth0 pass `runProviderConformance` against recorded
   payloads, including an adapter that must fail.
-- **Runtime conformance.** Memory, Node timer and Durable Object alarm runtimes pass
+- **Runtime conformance.** Memory, Node timer, SQLite and Durable Object alarm runtimes pass
   `runRuntimeConformance`.
+- **SQLite restart recovery.** The store runs with WAL, passes runtime conformance, and a
+  journey that was still in flight when the first store closed is finalised from the second
+  store with the expected outcome. A test also tries to append to another tenant's trace and
+  requires the write to fail.
 - **Sink conformance.** OTLP, wide event, webhook and object store pass `runSinkConformance`,
   including HMAC verification, webhook retry behaviour, NDJSON formatting and a content-hash
   key that stays stable on replay.
@@ -38,7 +42,7 @@ actionlint and the agent file checks. Current result: 23 test files, 120 tests, 
   sends `auth.transaction.id`, the feed parses `details.transaction_id`, and the stitcher
   joins exactly per tenant. Tests cover failure then success, success then failure, pending
   adoption by transaction, and a transaction lookup outside the window.
-- **Boundaries.** `pnpm boundaries` reports no violation across 83 modules.
+- **Boundaries.** `pnpm boundaries` reports no violation across 86 modules.
 - **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
   unknown keys, and refuses a directory with a shared key or duplicate tenant.
 
@@ -54,6 +58,9 @@ actionlint and the agent file checks. Current result: 23 test files, 120 tests, 
   Action invocation. The wrapper has a 250 ms abort and never throws, which bounds the
   failure mode but is not a latency measurement.
 - **No production installs.** The plan's design partner gate is business validation, not code.
+- **SQLite is verified for one writer.** WAL, restart recovery and tenant ownership are
+  tested. Multi-process access, migration from an older schema, and pruning under load are
+  not. Run one replica per database until the Redis buffer exists.
 - **Community provider rows and Redis, Postgres, D1, Lambda and Kubernetes runtimes are not
   implemented.** They are listed as future work in `PLAN.md`, not claimed as shipped.
 - **Auth0 Management API config fetch has no integration test.** It is typed and compiled,
@@ -65,7 +72,16 @@ An independent review of the first build found defects. These were fixed and are
 tests, rather than deferred:
 
 - Hint joins are scoped by tenant and require a matching user hash. A client ID alone cannot
-  join, and an event for one tenant cannot attach to another tenant's journey.
+  join, and an event for one tenant cannot attach to another tenant's journey. Candidate
+  lookup is an intersection, so a tenant-only index cannot match a user-hash query.
+- A trace has one owner. The stitcher and the SQLite store both reject an append from another
+  tenant, because a leaked trace ID is not an authorization.
+- An empty API key is rejected at config load and at the bearer parser, so a blank header
+  cannot authenticate.
+- An OTLP timestamp that is not integer nanoseconds returns 400 instead of throwing from
+  `BigInt` and returning 500.
+- The Node server drains in-flight journeys before it flushes sinks and closes the store, so
+  a graceful shutdown does not drop a buffered journey.
 - Redaction covers span events and status messages, and an `auth.user.hash` that is not a
   real hash is rehashed or dropped.
 - Each login attempt rotates the trace. A pending attempt keeps it across the redirect, and a
@@ -90,7 +106,7 @@ After the review, three changes landed:
   and the root span. The Auth0 feed marks signup events, the Action wrapper takes a `stage`
   and `kind`, and the browser SDK takes a `kind`.
 - The browser SDK batches spans, flushes on the redirect, the callback and a page hide, and
-  measures 2,651 bytes gzipped on its own. The page snippet is 936 bytes gzipped.
+  measures 2,659 bytes gzipped on its own. The page snippet is 936 bytes gzipped.
 - The Cloudflare Worker resolves the API key with `createKeyDirectory` and routes to one
   Durable Object per tenant, so tenant state is isolated before ingest.
 

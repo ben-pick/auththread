@@ -50,11 +50,14 @@ const num = (value: unknown, what: string): number => {
 };
 
 const nanosToMs = (value: unknown): number => {
-  const nanos =
-    typeof value === "string"
-      ? BigInt(value)
-      : BigInt(Math.round(num(value, "time")));
-  return Number(nanos / 1_000_000n);
+  if (typeof value === "string") {
+    if (!/^\d+$/.test(value)) {
+      throw new BadRequest("timestamp must be integer nanoseconds");
+    }
+    return Number(BigInt(value) / 1_000_000n);
+  }
+  const nanos = Math.round(num(value, "timestamp"));
+  return Number(BigInt(nanos) / 1_000_000n);
 };
 
 const decodeValue = (value: unknown): AttributeValue => {

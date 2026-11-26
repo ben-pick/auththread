@@ -96,9 +96,9 @@ file is provided but has not been run in CI yet.
 
 | Runtime | Storage | Scheduler | Status |
 | --- | --- | --- | --- |
-| Node / Docker | Memory | In-process timer | **v0.1** |
+| Node / Docker | Memory, or SQLite with WAL when `AUTHTHREAD_DB` is set | In-process timer | **v0.1** |
 | Cloudflare Workers | Durable Object storage, one object per tenant | Alarms | **v0.1** |
-| Redis, Postgres, SQLite, D1 | | | planned |
+| Redis or Valkey, Postgres, D1 | | | planned |
 | Lambda, Kubernetes, Vercel, Netlify | | | later or community |
 
 ### Sinks
@@ -197,7 +197,7 @@ the stitcher agree without a round trip.
 | [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
 | [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter |
 | [`@auththread/auth0`](packages/providers/auth0) | Adapter, browser helper, Action wrapper, page snippet |
-| [`@auththread/runtime-node`](packages/runtimes/node) | Node server, timer scheduler, file settings |
+| [`@auththread/runtime-node`](packages/runtimes/node) | Node server, timer scheduler, file settings, SQLite buffer |
 | [`@auththread/runtime-cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
 | [`@auththread/sink-otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
 | [`@auththread/sink-wide-event`](packages/sinks/wide-event) | One JSON journey per line |
@@ -217,13 +217,13 @@ the stitcher agree without a round trip.
 ## Verification
 
 ```sh
-mise exec -- pnpm check   # types, lint, 120 tests, boundaries, budgets, agent files
+mise exec -- pnpm check   # types, lint, 129 tests, boundaries, budgets, agent files
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm budget  # browser SDK 2,659 B gzip, snippet 936 B gzip
 ```
 
-Current status: 23 test files, 120 tests, 83 modules, no boundary violations. See
+Current status: 24 test files, 129 tests, 86 modules, no boundary violations. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap
@@ -236,6 +236,7 @@ Current status: 23 test files, 120 tests, 83 modules, no boundary violations. Se
 - [x] Generic OIDC browser adapter
 - [x] Auth0 browser params, Log Stream feed, Action wrapper, page snippet, config fetch
 - [x] Node runtime and Cloudflare Durable Object runtime
+- [x] SQLite buffer with WAL and restart recovery for the Node runtime
 - [x] Wide event, webhook and object store sinks
 - [x] Conformance suites, cross-runtime equality, shared corpus
 - [x] Keycloak compose, Node image and Worker examples
@@ -250,7 +251,7 @@ Current status: 23 test files, 120 tests, 83 modules, no boundary violations. Se
 - [ ] Ship the Auth0 Action wrapper in a form Actions can require
 - [ ] Token exchange error status in the browser SDK
 - [ ] Signed page snippet release with SRI
-- [ ] Redis, Postgres, SQLite and D1 storage backends
+- [ ] Redis, Postgres and D1 storage backends
 - [ ] Parquet object store and predicate pushdown
 - [ ] Native ClickHouse sink
 - [ ] Run the Keycloak compose stack in CI

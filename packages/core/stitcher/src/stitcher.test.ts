@@ -373,6 +373,74 @@ describe("stitcher", () => {
     expect(wide?.correlationCounts).toEqual({ exact: 2, inferred: 0 });
   });
 
+  it("does not join an event by tenant or client alone", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("eeeeeeeeeeeeeeee"),
+        name: "auth.app.login_start",
+        startMs: NOW,
+      }),
+      tenant,
+    );
+    await stitcher.ingestEvent(
+      {
+        id: "evt_no_user",
+        provider: "fake",
+        tenant: "acme",
+        type: "login_failure",
+        atMs: NOW + 10,
+        hints: { userHash: "u_someone_else" },
+        attributes: {},
+      },
+      tenant,
+    );
+
+    await stitcher.runDue(NOW + 5000);
+    const wide = stitcher.flush()[0]?.wideEvent;
+    expect(wide?.outcome).toBe("abandoned");
+    expect(wide?.correlationCounts).toEqual({ exact: 0, inferred: 0 });
+  });
+
+  it("refuses a span from another tenant on the same trace", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("ffffffffffffffff"),
+        name: "auth.app.login_start",
+        startMs: NOW,
+      }),
+      tenant,
+    );
+
+    await expect(
+      stitcher.ingestSpan(
+        span({
+          spanId: parseSpanId("abababababababab"),
+          name: "auth.app.callback",
+          startMs: NOW + 1,
+        }),
+        { ...tenant, tenant: "globex" },
+      ),
+    ).rejects.toThrow("another tenant");
+  });
+
+  it("drains in-flight journeys", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("dddddddddddddddd"),
+        name: "auth.app.login_start",
+        startMs: NOW,
+      }),
+      tenant,
+    );
+
+    await stitcher.drain();
+    const wide = stitcher.flush()[0]?.wideEvent;
+    expect(wide?.outcome).toBe("abandoned");
+  });
+
   it("survives a sink that throws", async () => {
     const failing = createStitcher({
       providers: [adapter],
@@ -419,6 +487,36 @@ describe("http surface", () => {
       new Request("http://stitcher/v1/spans", { method: "POST", body: "{}" }),
     );
     expect(response.status).toBe(401);
+  });
+
+  it("rejects an empty bearer key", async () => {
+    const response = await spawn().fetch(
+      new Request("http://stitcher/v1/spans", {
+        method: "POST",
+        headers: { authorization: "Bearer " },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a non-integer OTLP timestamp with 400", async () => {
+    const payload = encodeSpans(
+      [
+        span({
+          spanId: parseSpanId("9999999999999999"),
+          name: "auth.app.login_start",
+          startMs: NOW,
+        }),
+      ],
+      { serviceName: "example" },
+    );
+    const first = payload.resourceSpans[0]?.scopeSpans[0]?.spans[0];
+    if (first === undefined) throw new Error("missing span");
+    first.startTimeUnixNano = "1.5";
+
+    const response = await spawn().fetch(json(payload));
+    expect(response.status).toBe(400);
   });
 
   it("ingests an OTLP batch and finalises it", async () => {
