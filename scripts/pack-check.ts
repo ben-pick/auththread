@@ -43,6 +43,10 @@ const packages: readonly PublicPackage[] = [
     ],
   },
   {
+    directory: "packages/providers/auth0-actions",
+    required: ["dist/index.js"],
+  },
+  {
     directory: "packages/providers/auth0",
     required: [
       "dist/index.js",

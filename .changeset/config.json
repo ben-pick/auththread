@@ -11,6 +11,7 @@
       "@auththread/browser",
       "@auththread/sdk",
       "@auththread/auth0",
+      "@auththread/auth0-actions",
       "@auththread/oidc",
       "@auththread/runtime-node",
       "@auththread/runtime-cloudflare",

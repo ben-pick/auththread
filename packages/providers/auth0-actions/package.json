@@ -1,0 +1,56 @@
+{
+  "name": "@auththread/auth0-actions",
+  "version": "0.1.0",
+  "description": "CommonJS Auth0 Actions wrapper for auththread. Requires no runtime dependencies.",
+  "license": "MIT",
+  "type": "commonjs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/index.js",
+    "prepack": "pnpm build && node ../../../scripts/copy-license.ts"
+  },
+  "devDependencies": {
+    "@auththread/auth0": "workspace:^",
+    "esbuild": "0.28.2",
+    "typescript": "catalog:"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ben-pick/auththread.git",
+    "directory": "packages/providers/auth0-actions"
+  },
+  "homepage": "https://github.com/ben-pick/auththread#readme",
+  "bugs": {
+    "url": "https://github.com/ben-pick/auththread/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "exports": {
+      ".": "./dist/index.js",
+      "./package.json": "./package.json"
+    }
+  },
+  "author": "Auththread contributors",
+  "keywords": [
+    "auth0",
+    "actions",
+    "auth",
+    "observability",
+    "commonjs"
+  ]
+}

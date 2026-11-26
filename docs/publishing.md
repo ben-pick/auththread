@@ -24,19 +24,28 @@ specifier leaks, then runs `publint`.
 
 ## Versions
 
-All 14 public packages are in one Changesets fixed group at v0.1. Pre-1.0:
+All 15 public packages are in one Changesets fixed group at v0.1. Pre-1.0:
 minor = breaking, patch = fix. Split adapters into independent versions only
 when community adapters exist.
 
 ## First publish
 
-1. Claim the `@auththread` npm scope.
-2. Create an npm automation token and add `NPM_TOKEN` to the repository.
-3. Merge the version PR or run `pnpm release` from a clean checkout.
-4. After the packages exist, configure npm trusted publishing for
-   `.github/workflows/release.yml` and remove the token.
-5. Verify the provenance record on npm and the `repository.url` in each package.
-6. Tag the release train `vX.Y.Z` so the container workflow builds the matching
+1. Claim the `@auththread` npm scope: npmjs.com → Organizations → Create
+   organization → `auththread`.
+2. Create a **granular access token** at npmjs.com → Access Tokens → Generate
+   New Token. Give it `@auththread` read/write access, an expiry, and permission
+   to bypass 2FA for CI. Do not use an all-packages token.
+3. Store it as the repository secret `NPM_TOKEN` under Settings → Secrets and
+   variables → Actions. The release workflow writes it to `$HOME/.npmrc` for
+   the publish step. Never commit it or put it in a project `.npmrc`.
+4. Merge the version PR or run `pnpm release` from a clean checkout. For a
+   local publish, use `npm login` or export `NPM_TOKEN` and add it to your
+   user-level `~/.npmrc`.
+5. After the packages exist, configure npm trusted publishing for each package
+   (GitHub Actions, repository `ben-pick/auththread`, workflow `release.yml`)
+   and remove the `NPM_TOKEN` secret and workflow env.
+6. Verify the provenance record on npm and the `repository.url` in each package.
+7. Tag the release train `vX.Y.Z` so the container workflow builds the matching
    multi-arch image.
 
 ## Snapshots
@@ -54,6 +63,7 @@ Never publish a snapshot without `--tag next`.
 
 - `@auththread/browser` and provider `/browser` entrypoints are browser-only.
 - `@auththread/auth0/actions` has an ESM build and a bundled CommonJS file for
-  the Auth0 Actions runtime.
+  Node consumers. Auth0 Actions should use `@auththread/auth0-actions`, which is
+  a dedicated dependency-free CommonJS package.
 - The page snippet is a plain file in `@auththread/auth0/page/snippet.js`; it is
   versioned with the package and pinned by the customer with SRI.

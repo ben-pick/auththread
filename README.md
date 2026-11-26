@@ -205,6 +205,7 @@ the stitcher agree without a round trip.
 | [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
 | [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter; browser helper at `/browser` |
 | [`@auththread/auth0`](packages/providers/auth0) | Adapter; browser helper at `/browser`, Action wrapper, page snippet |
+| [`@auththread/auth0-actions`](packages/providers/auth0-actions) | Dependency-free CommonJS wrapper for Auth0 Actions |
 | [`@auththread/runtime-node`](packages/runtimes/node) | Node server layer, poll scheduler, file settings, SQLite buffer |
 | [`@auththread/runtime-cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
 | [`@auththread/sink-otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
