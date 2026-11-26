@@ -200,6 +200,7 @@ describe("sink conformance", () => {
           event: "auth.journey",
           traceId: journey.traceId,
           spanId: journey.root.spanId,
+          kind: journey.kind,
           outcome: journey.outcome,
           provider: journey.provider,
           tenant: journey.tenant,

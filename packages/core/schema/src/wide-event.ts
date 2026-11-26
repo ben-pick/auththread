@@ -37,6 +37,7 @@ export function toWideEvent(journey: Journey): WideEvent {
     event: "auth.journey",
     traceId: journey.traceId,
     spanId: journey.root.spanId,
+    kind: journey.kind,
     outcome: journey.outcome,
     provider: journey.provider,
     tenant: journey.tenant,
@@ -56,6 +57,7 @@ export const isWideEvent = (value: unknown): value is WideEvent => {
     record.event === "auth.journey" &&
     typeof record.traceId === "string" &&
     typeof record.spanId === "string" &&
+    typeof record.kind === "string" &&
     typeof record.outcome === "string" &&
     typeof record.startedAt === "string" &&
     typeof record.durationMs === "number" &&

@@ -61,6 +61,7 @@ export interface WideEvent {
   readonly event: "auth.journey";
   readonly traceId: TraceId;
   readonly spanId: SpanId;
+  readonly kind: JourneyKind;
   readonly outcome: Outcome;
   readonly provider: string;
   readonly tenant: string;
