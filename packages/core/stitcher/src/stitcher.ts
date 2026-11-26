@@ -15,8 +15,10 @@ import {
   type Journey,
   type ProviderEvent,
   redactAttributes,
+  redactSpan,
   type Span,
   sha256Hex,
+  sortSpans,
   type TraceId,
 } from "@auththread/schema";
 import {
@@ -26,18 +28,25 @@ import {
 } from "./decode.ts";
 import { BadRequest, NotFound, Unauthorized } from "./errors.ts";
 
+export interface Clock {
+  now(): number;
+}
+
 export interface StitcherOptions {
   readonly providers: readonly ProviderAdapter<unknown>[];
   readonly buffer: JourneyBuffer;
   readonly scheduler: Scheduler;
   readonly settings: SettingsStore;
   readonly sinks: readonly Sink[];
+  readonly clock?: Clock;
   /** A journey finalises this long after its last item. Default 10 minutes. */
   readonly quietMs?: number;
   /** How far apart a hint match may be. Default 2 minutes. */
   readonly correlationWindowMs?: number;
   /** Items older than this are pruned. Default 2 hours. */
   readonly ttlMs?: number;
+  /** Items kept per journey. Older items are rejected. Default 500. */
+  readonly maxItemsPerTrace?: number;
   /** Keep emitted batches in memory so tests and the demo can read them. */
   readonly captureBatches?: boolean;
   readonly onError?: (error: unknown) => void;
@@ -62,16 +71,24 @@ export interface Stitcher {
 interface PendingEvent {
   readonly event: ProviderEvent;
   readonly atMs: number;
+  readonly tenant: string;
+  readonly bytes: number;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
-const MAX_PENDING = 1000;
+const MAX_PENDING = 200;
+const MAX_PENDING_BYTES = 1024 * 1024;
 
-const hintsOf = (attributes: Attributes, salt?: string): CorrelationHints => {
+const hintsOf = (
+  attributes: Attributes,
+  salt: string | undefined,
+  tenant: string | undefined,
+): CorrelationHints => {
   const userHash = attributes["auth.user.hash"];
   const clientId = attributes["auth.client_id"];
   const rawUser = attributes.user_id;
   return {
+    ...(tenant === undefined ? {} : { tenant }),
     ...(typeof userHash === "string" ? { userHash } : {}),
     ...(typeof rawUser === "string" && salt !== undefined
       ? { userHash: hashUser(rawUser, salt) }
@@ -80,20 +97,20 @@ const hintsOf = (attributes: Attributes, salt?: string): CorrelationHints => {
   };
 };
 
+/**
+ * Joining on a client ID alone is unsafe: a client is shared by every user of an
+ * app. A hint join therefore needs the same tenant and a user hash.
+ */
 const matching = (
   event: ProviderEvent,
   hints: CorrelationHints,
   windowMs: number,
   atMs: number,
-): boolean => {
-  if (Math.abs(event.atMs - atMs) > windowMs) return false;
-  return (
-    (event.hints.userHash !== undefined &&
-      event.hints.userHash === hints.userHash) ||
-    (event.hints.clientId !== undefined &&
-      event.hints.clientId === hints.clientId)
-  );
-};
+): boolean =>
+  event.tenant === hints.tenant &&
+  event.hints.userHash !== undefined &&
+  event.hints.userHash === hints.userHash &&
+  Math.abs(event.atMs - atMs) <= windowMs;
 
 const json = (body: unknown, status = 200): Response =>
   Response.json(body, {
@@ -131,9 +148,11 @@ const bearer = (request: Request): string | null => {
 };
 
 export function createStitcher(options: StitcherOptions): Stitcher {
+  const clock = options.clock ?? { now: () => Date.now() };
   const quietMs = options.quietMs ?? 10 * 60 * 1000;
   const correlationWindowMs = options.correlationWindowMs ?? 2 * 60 * 1000;
   const ttlMs = options.ttlMs ?? 2 * 60 * 60 * 1000;
+  const maxItems = options.maxItemsPerTrace ?? 500;
 
   const providers = new Map(
     options.providers.map((provider) => [provider.id, provider]),
@@ -141,13 +160,17 @@ export function createStitcher(options: StitcherOptions): Stitcher {
   const emitted: SinkBatch[] = [];
   const pending: PendingEvent[] = [];
   const deadlines = new Map<TraceId, number>();
+  const counts = new Map<TraceId, number>();
+  const finalising = new Set<TraceId>();
+  let pendingBytes = 0;
+  let overrideNow: number | null = null;
   let finalised = 0;
   let unmatchedDrops = 0;
   let writeErrors = 0;
   let rejected = 0;
 
   options.scheduler.onDue(async (traceId) => {
-    await finalise(traceId);
+    await finalise(traceId, overrideNow ?? clock.now());
   });
 
   const redactEvent = (
@@ -160,6 +183,59 @@ export function createStitcher(options: StitcherOptions): Stitcher {
     }),
   });
 
+  /**
+   * Deadlines only move forward, and never sit in the past. A late span stamped
+   * eleven minutes ago must wait a full quiet period from arrival.
+   */
+  async function scheduleFinalise(
+    traceId: TraceId,
+    endMs: number,
+  ): Promise<void> {
+    const now = clock.now();
+    const bounded = Math.min(Math.max(now, endMs), now + ttlMs);
+    const at = Math.max(deadlines.get(traceId) ?? 0, bounded + quietMs);
+    deadlines.set(traceId, at);
+    await options.scheduler.schedule(traceId, at);
+  }
+
+  function takeSlot(traceId: TraceId): boolean {
+    const count = counts.get(traceId) ?? 0;
+    if (count >= maxItems) {
+      rejected += 1;
+      return false;
+    }
+    counts.set(traceId, count + 1);
+    return true;
+  }
+
+  async function appendEvent(
+    traceId: TraceId,
+    event: ProviderEvent,
+  ): Promise<void> {
+    if (!takeSlot(traceId)) return;
+    await options.buffer.append(traceId, {
+      kind: "event",
+      id: `event:${event.id}`,
+      atMs: event.atMs,
+      event,
+    });
+    await scheduleFinalise(traceId, event.atMs);
+  }
+
+  function park(entry: PendingEvent): void {
+    pending.push(entry);
+    pendingBytes += entry.bytes;
+
+    while (
+      pending.length > MAX_PENDING ||
+      (pendingBytes > MAX_PENDING_BYTES && pending.length > 1)
+    ) {
+      const dropped = pending.shift();
+      pendingBytes -= dropped?.bytes ?? 0;
+      unmatchedDrops += 1;
+    }
+  }
+
   async function adoptPending(
     traceId: TraceId,
     hints: CorrelationHints,
@@ -170,98 +246,109 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       if (entry === undefined) continue;
       if (!matching(entry.event, hints, correlationWindowMs, atMs)) continue;
       pending.splice(index, 1);
-      await options.buffer.append(traceId, {
-        kind: "event",
-        id: `event:${entry.event.id}`,
-        atMs: entry.event.atMs,
-        event: entry.event,
-      });
+      pendingBytes -= entry.bytes;
+      await appendEvent(traceId, entry.event);
     }
   }
 
-  async function scheduleFinalise(
-    traceId: TraceId,
-    endMs: number,
-  ): Promise<void> {
-    const at = Math.max(deadlines.get(traceId) ?? 0, endMs + quietMs);
-    deadlines.set(traceId, at);
-    await options.scheduler.schedule(traceId, at);
-  }
+  async function finalise(traceId: TraceId, nowMs: number): Promise<void> {
+    if (finalising.has(traceId)) return;
+    finalising.add(traceId);
 
-  async function appendEvent(
-    traceId: TraceId,
-    event: ProviderEvent,
-  ): Promise<void> {
-    await options.buffer.append(traceId, {
-      kind: "event",
-      id: `event:${event.id}`,
-      atMs: event.atMs,
-      event,
-    });
-    await scheduleFinalise(traceId, event.atMs);
-  }
+    try {
+      const items = await options.buffer.read(traceId);
+      const spans = items
+        .filter((item) => item.kind === "span")
+        .map((item) => item.span);
+      if (spans.length === 0) {
+        await options.buffer.delete(traceId);
+        deadlines.delete(traceId);
+        counts.delete(traceId);
+        return;
+      }
 
-  async function finalise(traceId: TraceId): Promise<void> {
-    const items = await options.buffer.read(traceId);
-    const spans = items
-      .filter((item) => item.kind === "span")
-      .map((item) => item.span);
-    if (spans.length === 0) {
+      const latest = items.reduce((max, item) => Math.max(max, item.atMs), 0);
+      if (nowMs < latest + quietMs) {
+        await scheduleFinalise(traceId, latest);
+        return;
+      }
+
+      const events = items
+        .filter((item) => item.kind === "event")
+        .map((item) => item.event);
+      const first = sortSpans(spans)[0] as Span;
+      const firstString = (value: unknown, fallback: string): string =>
+        typeof value === "string" ? value : fallback;
+      const provider = firstString(
+        first.attributes["auth.provider"],
+        events[0]?.provider ?? "unknown",
+      );
+      const tenant = firstString(
+        first.attributes["auth.tenant"],
+        events[0]?.tenant ?? "unknown",
+      );
+
+      const journey: Journey = buildJourney({
+        traceId: first.traceId,
+        provider,
+        tenant,
+        spans: spans.map((span) => redactSpan(span, {})),
+        events: events.map((event) => redactEvent(event)),
+      });
+
+      for (const sink of options.sinks) {
+        try {
+          const batch = sink.render(journey);
+          if (batch === null) continue;
+          await sink.write(batch);
+          if (options.captureBatches === true) emitted.push(batch);
+        } catch (error) {
+          writeErrors += 1;
+          options.onError?.(error);
+        }
+      }
+
+      const seen = new Set(items.map((item) => item.id));
+      const appended = (await options.buffer.read(traceId)).filter(
+        (item) => !seen.has(item.id),
+      );
+      if (appended.length > 0) {
+        const newest = appended.reduce(
+          (max, item) => Math.max(max, item.atMs),
+          0,
+        );
+        await scheduleFinalise(traceId, newest);
+        return;
+      }
+
       await options.buffer.delete(traceId);
       deadlines.delete(traceId);
-      return;
+      counts.delete(traceId);
+      finalised += 1;
+    } finally {
+      finalising.delete(traceId);
     }
-
-    const events = items
-      .filter((item) => item.kind === "event")
-      .map((item) => item.event);
-    const first = spans[0] as Span;
-    const firstString = (value: unknown, fallback: string): string =>
-      typeof value === "string" ? value : fallback;
-    const provider = firstString(
-      first.attributes["auth.provider"],
-      events[0]?.provider ?? "unknown",
-    );
-    const tenant = firstString(
-      first.attributes["auth.tenant"],
-      events[0]?.tenant ?? "unknown",
-    );
-
-    const journey: Journey = buildJourney({
-      traceId: first.traceId,
-      provider,
-      tenant,
-      spans: spans.map((span) => ({
-        ...span,
-        attributes: redactAttributes(span.attributes, {}),
-      })),
-      events: events.map((event) => redactEvent(event)),
-    });
-
-    for (const sink of options.sinks) {
-      try {
-        const batch = sink.render(journey);
-        if (batch === null) continue;
-        await sink.write(batch);
-        if (options.captureBatches === true) emitted.push(batch);
-      } catch (error) {
-        writeErrors += 1;
-        options.onError?.(error);
-      }
-    }
-
-    await options.buffer.delete(traceId);
-    deadlines.delete(traceId);
-    finalised += 1;
   }
 
   const stitcher: Stitcher = {
     async ingestSpan(span, tenant) {
-      const attributes = redactAttributes(span.attributes, {
+      const stamped: Span = {
+        ...span,
+        attributes:
+          tenant === undefined
+            ? span.attributes
+            : {
+                ...span.attributes,
+                "auth.provider": tenant.provider,
+                "auth.tenant": tenant.tenant,
+              },
+      };
+      const clean = redactSpan(stamped, {
         ...(tenant === undefined ? {} : { salt: tenant.salt }),
       });
-      const clean: Span = { ...span, attributes };
-      const hints = hintsOf(attributes, tenant?.salt);
+      if (!takeSlot(span.traceId)) return;
+
+      const hints = hintsOf(clean.attributes, tenant?.salt, tenant?.tenant);
 
       await options.buffer.append(span.traceId, {
         kind: "span",
@@ -279,9 +366,16 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       const classified = adapter?.classify(event);
       const verdict: ProviderEvent = {
         ...event,
-        ...(tenant === undefined ? {} : { tenant: tenant.tenant }),
+        provider: tenant?.provider ?? event.provider,
+        tenant: tenant?.tenant ?? event.tenant,
         attributes: {
           ...event.attributes,
+          ...(tenant === undefined
+            ? {}
+            : {
+                "auth.provider": tenant.provider,
+                "auth.tenant": tenant.tenant,
+              }),
           ...(classified?.outcome === undefined
             ? {}
             : { "auth.outcome": classified.outcome }),
@@ -294,7 +388,11 @@ export function createStitcher(options: StitcherOptions): Stitcher {
         ...verdict,
         hints: {
           ...verdict.hints,
-          ...hintsOf(verdict.attributes, tenant?.salt),
+          ...hintsOf(
+            verdict.attributes,
+            tenant?.salt,
+            tenant?.tenant ?? verdict.tenant,
+          ),
         },
       };
       const clean = redactEvent(withHints, tenant);
@@ -315,21 +413,28 @@ export function createStitcher(options: StitcherOptions): Stitcher {
         return;
       }
 
-      pending.push({ event: clean, atMs: clean.atMs });
-      if (pending.length > MAX_PENDING) {
-        pending.shift();
-        unmatchedDrops += 1;
-      }
+      park({
+        event: clean,
+        atMs: clean.atMs,
+        tenant: clean.tenant,
+        bytes: JSON.stringify(clean).length,
+      });
     },
 
     async runDue(nowMs) {
-      await options.scheduler.runDue(nowMs);
+      overrideNow = nowMs;
+      try {
+        await options.scheduler.runDue(nowMs);
+      } finally {
+        overrideNow = null;
+      }
 
       for (let index = pending.length - 1; index >= 0; index--) {
         const entry = pending[index];
         if (entry === undefined) continue;
         if (nowMs - entry.atMs > ttlMs) {
           pending.splice(index, 1);
+          pendingBytes -= entry.bytes;
           unmatchedDrops += 1;
         }
       }

@@ -26,10 +26,10 @@ export function checker(name: string): Checker {
   };
 }
 
-export const containsAll = (
+export const leaks = (
   haystack: string,
   needles: readonly string[],
 ): boolean => {
   const lower = haystack.toLowerCase();
-  return needles.every((needle) => lower.includes(needle.toLowerCase()));
+  return needles.some((needle) => lower.includes(needle.toLowerCase()));
 };

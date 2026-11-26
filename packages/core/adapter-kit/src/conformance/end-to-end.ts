@@ -1,4 +1,9 @@
-import type { Outcome, ProviderEvent, Span } from "@auththread/schema";
+import {
+  compareStrings,
+  type Outcome,
+  type ProviderEvent,
+  type Span,
+} from "@auththread/schema";
 import type { SinkBatch } from "../sink.ts";
 import type { ConformanceReport } from "./report.ts";
 import { checker } from "./report.ts";
@@ -25,25 +30,14 @@ export interface EndToEndInput {
   readonly create: () => Promise<StitcherLike>;
 }
 
-const stable = (batches: readonly SinkBatch[]): string => {
-  const sorted = [...batches]
-    .map((batch) => ({
-      ...batch,
-      spans:
-        batch.spans === undefined
-          ? undefined
-          : [...batch.spans].sort(
-              (a, b) =>
-                a.startMs - b.startMs || a.spanId.localeCompare(b.spanId),
-            ),
-    }))
-    .sort(
+const stable = (batches: readonly SinkBatch[]): string =>
+  JSON.stringify(
+    [...batches].sort(
       (a, b) =>
-        a.sinkId.localeCompare(b.sinkId) ||
-        a.journeyId.localeCompare(b.journeyId),
-    );
-  return JSON.stringify(sorted);
-};
+        compareStrings(a.sinkId, b.sinkId) ||
+        compareStrings(a.journeyId, b.journeyId),
+    ),
+  );
 
 export async function runEndToEndConformance(
   input: EndToEndInput,
@@ -64,6 +58,13 @@ export async function runEndToEndConformance(
     await delayed.ingestSpan(span);
     await delayed.ingestSpan(span);
   }
+  await delayed.runDue(fixture.nowMs + Math.floor(fixture.quietMs / 2));
+  const early = await delayed.flush();
+  result.check(
+    early.length === 0,
+    "a journey finalised before its quiet period",
+  );
+
   await delayed.runDue(fixture.nowMs + fixture.quietMs + 1);
   const delayedBatches = await delayed.flush();
 
@@ -96,6 +97,19 @@ export async function runEndToEndConformance(
     spans.some((span) => span.name === "auth.journey"),
     "the root span was not exported",
   );
+
+  if (fixture.events.length > 0) {
+    const counts = wide?.correlationCounts;
+    result.check(
+      counts !== undefined &&
+        counts.exact + counts.inferred === fixture.events.length,
+      "provider events were not joined into the journey",
+    );
+    result.check(
+      wide?.steps.some((step) => step.name === "auth.provider.event") === true,
+      "joined provider events produced no step",
+    );
+  }
 
   return result.report();
 }

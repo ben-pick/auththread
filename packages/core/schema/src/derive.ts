@@ -7,6 +7,7 @@ import {
   type Outcome,
   SPAN_NAMES,
 } from "./attributes.ts";
+import { compareStrings } from "./compare.ts";
 import { parseSpanId, rootSpanId, type TraceId } from "./ids.ts";
 import type { JoinedEvent, Journey, ProviderEvent } from "./journey.ts";
 import { sha256Hex } from "./sha256.ts";
@@ -31,14 +32,14 @@ export function sortSpans(spans: readonly Span[]): Span[] {
   return [...spans].sort(
     (a, b) =>
       a.startMs - b.startMs ||
-      a.name.localeCompare(b.name) ||
-      a.spanId.localeCompare(b.spanId),
+      compareStrings(a.name, b.name) ||
+      compareStrings(a.spanId, b.spanId),
   );
 }
 
 export function sortEvents(events: readonly ProviderEvent[]): ProviderEvent[] {
   return [...events].sort(
-    (a, b) => a.atMs - b.atMs || a.id.localeCompare(b.id),
+    (a, b) => a.atMs - b.atMs || compareStrings(a.id, b.id),
   );
 }
 

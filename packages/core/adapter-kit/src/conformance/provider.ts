@@ -5,7 +5,7 @@ import {
 } from "@auththread/schema";
 import type { FeedRequest, ProviderAdapter } from "../provider.ts";
 import type { ConformanceReport } from "./report.ts";
-import { checker, containsAll } from "./report.ts";
+import { checker, leaks } from "./report.ts";
 
 export interface ProviderConformanceFixtures<Settings = unknown> {
   readonly settings: Settings;
@@ -49,6 +49,16 @@ export async function runProviderConformance<Settings>(
     declaresFeed === feeds.length > 0,
     "capability event-feed and the presence of feeds disagree",
   );
+  if (declaresFeed) {
+    result.check(
+      fixtures.valid.length > 0,
+      "an event-feed adapter needs at least one valid fixture",
+    );
+    result.check(
+      fixtures.pii.length > 0,
+      "an event-feed adapter needs PII fixtures to prove redaction",
+    );
+  }
   result.check(
     new Set(feeds.map((feed) => feed.path)).size === feeds.length,
     "feed paths are not unique",
@@ -103,7 +113,7 @@ export async function runProviderConformance<Settings>(
   if (fixtures.pii.length > 0) {
     for (const event of parsed) {
       result.check(
-        !containsAll(JSON.stringify(event), fixtures.pii),
+        !leaks(JSON.stringify(event), fixtures.pii),
         `event ${event.id} still contains raw personal data`,
       );
     }

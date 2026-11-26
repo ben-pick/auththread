@@ -30,6 +30,7 @@ export {
   NEUTRAL_ATTRIBUTES,
   SPAN_NAMES,
 } from "./attributes.ts";
+export { compareStrings } from "./compare.ts";
 export type { BuildJourneyInput } from "./derive.ts";
 export {
   buildJourney,
@@ -59,8 +60,10 @@ export type { RedactionSettings } from "./redact.ts";
 export {
   hashUser,
   isSecretKey,
+  isUserHash,
   isUserIdentifierKey,
   redactAttributes,
+  redactSpan,
   redactText,
 } from "./redact.ts";
 export { sha256Hex } from "./sha256.ts";

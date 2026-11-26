@@ -97,8 +97,7 @@ export class JourneyDurableObject {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const tenant = new URL(request.url).searchParams.get("tenant") ?? "default";
-    const id = env.JOURNEY.idFromName(tenant);
+    const id = env.JOURNEY.idFromName("default");
     return env.JOURNEY.get(id).fetch(request);
   },
 };

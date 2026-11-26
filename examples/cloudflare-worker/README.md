@@ -24,5 +24,6 @@ Set `AUTHTHREAD_TENANTS` as a secret. The value is the same shape as the Node co
 Set `OTLP_ENDPOINT` to send spans to a collector. Without it, journeys go to the wide
 event sink, which writes one JSON line per journey to the Worker log.
 
-The Worker routes a request to the Durable Object named by `?tenant=`. See ADR-0005 for why
-v0.1 uses one object per tenant rather than one per journey.
+The Worker forwards every request to one Durable Object named `default`. That object
+authenticates the tenant key and holds every tenant's journeys. See ADR-0005 for why v0.1
+uses one object per tenant, and why selecting a tenant from the URL would be wrong.

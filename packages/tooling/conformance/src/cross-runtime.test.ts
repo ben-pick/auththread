@@ -75,6 +75,7 @@ const memoryStitcher = (fixture: JourneyFixture): Stitcher =>
     sinks: [sink],
     quietMs: fixture.quietMs,
     captureBatches: true,
+    clock: { now: () => fixture.nowMs },
   });
 
 const durableObjectStitcher = (fixture: JourneyFixture): Stitcher => {
@@ -87,6 +88,7 @@ const durableObjectStitcher = (fixture: JourneyFixture): Stitcher => {
     sinks: [sink],
     quietMs: fixture.quietMs,
     captureBatches: true,
+    clock: { now: () => fixture.nowMs },
   });
 };
 

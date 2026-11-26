@@ -55,6 +55,50 @@ describe("browser SDK", () => {
     expect(sent.every((span) => span.traceId === first.traceId())).toBe(true);
   });
 
+  it("starts a new trace for a second login attempt", () => {
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      storage: storage(),
+      send: () => undefined,
+    });
+
+    const first = client.authorizeParams();
+    const firstTrace = client.traceId();
+    expect(first.ext_trace_id).toBe(firstTrace);
+    expect(
+      client.callback("https://app.example.com/callback?code=abc"),
+    ).toEqual({ ok: true });
+
+    const second = client.authorizeParams();
+    expect(second.ext_trace_id).not.toBe(firstTrace);
+    expect(client.traceId()).toBe(second.ext_trace_id);
+  });
+
+  it("keeps the trace across a redirect and rotates a stale pending attempt", () => {
+    const store = storage();
+    let now = 1000;
+    const client = init({
+      endpoint: "https://stitcher.example.com",
+      key: "at_pub",
+      tenant: "acme",
+      provider,
+      storage: store,
+      now: () => now,
+      send: () => undefined,
+    });
+
+    const first = client.authorizeParams();
+    const again = client.authorizeParams();
+    expect(again.ext_trace_id).toBe(first.ext_trace_id);
+
+    now += 16 * 60 * 1000;
+    const stale = client.authorizeParams();
+    expect(stale.ext_trace_id).not.toBe(first.ext_trace_id);
+  });
+
   it("treats a callback with neither code nor error as a failure", () => {
     const client = init({
       endpoint: "https://stitcher.example.com",

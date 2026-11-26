@@ -1,4 +1,5 @@
 import type { CorrelationHints, Span, TraceId } from "@auththread/schema";
+import { compareStrings } from "@auththread/schema";
 import type {
   JourneyBuffer,
   JourneyItem,
@@ -8,6 +9,7 @@ import type {
 
 export const hintKeys = (hints: CorrelationHints): string[] => {
   const keys: string[] = [];
+  if (hints.tenant !== undefined) keys.push(`t:${hints.tenant}`);
   if (hints.userHash !== undefined) keys.push(`u:${hints.userHash}`);
   if (hints.clientId !== undefined) keys.push(`c:${hints.clientId}`);
   if (hints.ipHash !== undefined) keys.push(`i:${hints.ipHash}`);
@@ -60,7 +62,7 @@ export function createMemoryBuffer(): JourneyBuffer {
       }
       return [...scores.entries()]
         .sort(
-          ([a, scoreA], [b, scoreB]) => scoreB - scoreA || a.localeCompare(b),
+          ([a, scoreA], [b, scoreB]) => scoreB - scoreA || compareStrings(a, b),
         )
         .map(([traceId]) => traceId);
     },

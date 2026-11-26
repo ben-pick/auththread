@@ -4,6 +4,7 @@ import type {
   Span,
   SpanKind,
 } from "@auththread/schema";
+import { compareStrings } from "@auththread/schema";
 
 const KIND: Record<SpanKind, number> = { internal: 1, server: 2, client: 3 };
 const STATUS: Record<string, number> = { unset: 0, ok: 1, error: 2 };
@@ -56,7 +57,7 @@ const toValue = (value: AttributeValue): OtlpValue => {
 
 export const encodeAttributes = (attributes: Attributes): OtlpAttribute[] =>
   Object.entries(attributes)
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareStrings(a, b))
     .map(([key, value]) => ({ key, value: toValue(value) }));
 
 export const encodeSpan = (span: Span): OtlpSpan => ({
@@ -117,7 +118,7 @@ export function encodeSpans(
             spans: [...spans]
               .sort(
                 (a, b) =>
-                  a.startMs - b.startMs || a.spanId.localeCompare(b.spanId),
+                  a.startMs - b.startMs || compareStrings(a.spanId, b.spanId),
               )
               .map(encodeSpan),
           },

@@ -34,8 +34,17 @@ describe("redactAttributes", () => {
   });
 
   it("keeps a hash the emitter already computed", () => {
-    const out = redactAttributes({ "auth.user.hash": "u_abc" }, {});
-    expect(out["auth.user.hash"]).toBe("u_abc");
+    const hash = `u_${"a".repeat(16)}`;
+    const out = redactAttributes({ "auth.user.hash": hash }, {});
+    expect(out["auth.user.hash"]).toBe(hash);
+  });
+
+  it("rehashes a value that only looks like a hash", () => {
+    const out = redactAttributes(
+      { "auth.user.hash": "alice@example.com" },
+      { salt: "salt" },
+    );
+    expect(out["auth.user.hash"]).toBe(hashUser("alice@example.com", "salt"));
   });
 
   it("masks free text", () => {

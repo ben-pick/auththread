@@ -13,6 +13,7 @@ import type { BrowserProvider } from "./provider.ts";
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export interface BrowserOptions {
@@ -43,6 +44,13 @@ export interface AuthThreadBrowser {
 
 const TRACE_KEY = "auththread.trace";
 const STARTED_KEY = "auththread.started";
+const PENDING_KEY = "auththread.pending";
+const PENDING_TTL_MS = 15 * 60 * 1000;
+
+const clear = (storage: StorageLike, key: string): void => {
+  if (storage.removeItem !== undefined) storage.removeItem(key);
+  else storage.setItem(key, "");
+};
 
 const memoryStorage = (): StorageLike => {
   const values = new Map<string, string>();
@@ -87,8 +95,26 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 
   const stored = storage.getItem(TRACE_KEY);
-  const traceId = stored !== null && isTraceId(stored) ? stored : newTraceId();
-  storage.setItem(TRACE_KEY, traceId);
+  let current: TraceId | null =
+    stored !== null && isTraceId(stored) ? stored : null;
+
+  const trace = (): TraceId => {
+    if (current === null) {
+      current = newTraceId();
+      storage.setItem(TRACE_KEY, current);
+    }
+    return current;
+  };
+
+  const beginAttempt = (): TraceId => {
+    const pending = Number(storage.getItem(PENDING_KEY) ?? "0");
+    const active = pending > 0 && now() - pending < PENDING_TTL_MS;
+    if (!active) {
+      current = newTraceId();
+      storage.setItem(TRACE_KEY, current);
+    }
+    return trace();
+  };
 
   const send = (body: string): void => {
     if (options.send !== undefined) {
@@ -128,17 +154,19 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
   };
 
   return {
-    traceId: () => traceId,
+    traceId: () => trace(),
 
     authorizeParams() {
       const startedAt = now();
+      const id = beginAttempt();
       storage.setItem(STARTED_KEY, String(startedAt));
+      storage.setItem(PENDING_KEY, String(startedAt));
       emit(
-        compactSpan(traceId, "auth.app.login_start", startedAt, 0, base, {
+        compactSpan(id, "auth.app.login_start", startedAt, 0, base, {
           code: "unset",
         }),
       );
-      return options.provider.authorizeParams(traceId);
+      return options.provider.authorizeParams(id);
     },
 
     callback(url) {
@@ -148,9 +176,12 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
       const failure = error ?? (code === null ? "missing_code" : undefined);
       const startedAt = Number(storage.getItem(STARTED_KEY) ?? String(now()));
       const finishedAt = now();
+      const id = trace();
+      clear(storage, PENDING_KEY);
+      clear(storage, STARTED_KEY);
       emit(
         compactSpan(
-          traceId,
+          id,
           "auth.app.callback",
           finishedAt,
           Math.max(0, finishedAt - startedAt),
@@ -177,7 +208,7 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
       const finishedAt = now();
       emit(
         compactSpan(
-          traceId,
+          trace(),
           "auth.app.token_exchange",
           finishedAt - durationMs,
           durationMs,
@@ -189,9 +220,10 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
 
     abandon(step) {
       const at = now();
+      clear(storage, PENDING_KEY);
       emit(
         compactSpan(
-          traceId,
+          trace(),
           "auth.ui.screen",
           at,
           0,

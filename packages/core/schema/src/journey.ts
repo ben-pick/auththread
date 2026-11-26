@@ -12,6 +12,8 @@ export interface CorrelationHints {
   readonly clientId?: string;
   readonly ipHash?: string;
   readonly userAgentHash?: string;
+  /** Scopes the hint index so one tenant can never join another tenant's journey. */
+  readonly tenant?: string;
 }
 
 export interface ProviderEvent {

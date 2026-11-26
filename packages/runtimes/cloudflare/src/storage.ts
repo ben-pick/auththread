@@ -5,6 +5,7 @@ import {
   type Scheduler,
 } from "@auththread/adapter-kit";
 import type { TraceId } from "@auththread/schema";
+import { compareStrings } from "@auththread/schema";
 
 /** The subset of Durable Object storage the runtime uses. Tests provide a fake. */
 export interface DurableObjectStorageLike {
@@ -57,7 +58,11 @@ export function createDurableObjectBuffer(
     },
     async indexHints(traceId, hints, atMs) {
       for (const key of hintKeys(hints)) {
-        await storage.put(hintKey(key, traceId), { atMs });
+        const storageKey = hintKey(key, traceId);
+        const existing = await storage.get<{ atMs: number }>(storageKey);
+        await storage.put(storageKey, {
+          atMs: Math.max(existing?.atMs ?? 0, atMs),
+        });
       }
     },
     async findCandidates(hints, windowMs, nowMs) {
@@ -76,7 +81,7 @@ export function createDurableObjectBuffer(
       }
       return [...scores.entries()]
         .sort(
-          ([a, scoreA], [b, scoreB]) => scoreB - scoreA || a.localeCompare(b),
+          ([a, scoreA], [b, scoreB]) => scoreB - scoreA || compareStrings(a, b),
         )
         .map(([traceId]) => traceId);
     },

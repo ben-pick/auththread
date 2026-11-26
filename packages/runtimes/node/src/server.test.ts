@@ -106,10 +106,26 @@ describe("node server", () => {
     });
     expect(response.status).toBe(202);
 
-    await server.stitcher.runDue(fixture.nowMs + 61_000);
+    await server.stitcher.runDue(Date.now() + 61_000);
     server.stitcher.flush();
     expect(server.stitcher.stats().finalised).toBe(1);
 
+    await server.close();
+  });
+
+  it("rejects an unauthenticated oversized body before authenticating", async () => {
+    const server = createNodeServer({
+      providers: [],
+      sinks: [],
+      settings: { getTenant: async () => null },
+    });
+    const { port } = await server.listen(0, "127.0.0.1");
+    const response = await fetch(`http://127.0.0.1:${port}/v1/spans`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "x".repeat(300 * 1024),
+    });
+    expect(response.status).toBe(413);
     await server.close();
   });
 
@@ -171,6 +187,7 @@ describe("end-to-end conformance on the node runtime", () => {
           ],
           settings: { getTenant: async () => tenant },
           captureBatches: true,
+          clock: { now: () => fixture.nowMs },
         });
         return server.stitcher;
       },

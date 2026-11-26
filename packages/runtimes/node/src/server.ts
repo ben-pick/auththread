@@ -11,6 +11,7 @@ import type {
 } from "@auththread/adapter-kit";
 import { createMemoryBuffer } from "@auththread/adapter-kit";
 import {
+  type Clock,
   createStitcher,
   type Stitcher,
   type StitcherOptions,
@@ -25,6 +26,7 @@ export interface NodeServerOptions {
   readonly correlationWindowMs?: number;
   readonly ttlMs?: number;
   readonly scheduler?: NodeScheduler;
+  readonly clock?: Clock;
   readonly onError?: (error: unknown) => void;
   readonly captureBatches?: boolean;
 }
@@ -37,12 +39,24 @@ export interface NodeServer {
   readonly server: Server;
 }
 
+const MAX_BODY_BYTES = 256 * 1024;
+
+class PayloadTooLarge extends Error {}
+
 const bodyOf = async (
   request: IncomingMessage,
 ): Promise<string | undefined> => {
   if (request.method === "GET" || request.method === "HEAD") return undefined;
+  const declared = Number(request.headers["content-length"] ?? "0");
+  if (declared > MAX_BODY_BYTES) throw new PayloadTooLarge();
+
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(chunk as Buffer);
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw new PayloadTooLarge();
+    chunks.push(chunk as Buffer);
+  }
   return Buffer.concat(chunks).toString("utf8");
 };
 
@@ -87,6 +101,7 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
       ? {}
       : { correlationWindowMs: options.correlationWindowMs }),
     ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.captureBatches === undefined
       ? {}
       : { captureBatches: options.captureBatches }),
@@ -99,6 +114,11 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
         const fetchRequest = await toRequest(request);
         await toNodeResponse(await stitcher.fetch(fetchRequest), response);
       } catch (error) {
+        if (error instanceof PayloadTooLarge) {
+          response.statusCode = 413;
+          response.end("payload too large");
+          return;
+        }
         options.onError?.(error);
         response.statusCode = 500;
         response.end("internal");

@@ -63,6 +63,11 @@ export async function runSinkConformance(
         "sink declares spans but rendered none",
       );
       const spans: readonly Span[] = batch.spans ?? [];
+      result.check(spans.length > 0, "sink rendered an empty span list");
+      result.check(
+        spans.some((span) => span.name === "auth.journey"),
+        "sink rendered spans without the journey root",
+      );
       result.check(
         spans.every((span) => span.traceId === journey.traceId),
         "a span belongs to another trace",
@@ -102,7 +107,6 @@ export async function runSinkConformance(
 
     await input.sink.write(JSON.parse(JSON.stringify(batch)) as typeof batch);
     await input.sink.write(batch);
-    result.check(true, "write twice");
   }
 
   return result.report();

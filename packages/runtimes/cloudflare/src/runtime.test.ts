@@ -82,6 +82,7 @@ describe("durable object runtime", () => {
 
   it("finalises a journey from an alarm and exports it", async () => {
     const storage = new FakeStorage();
+    let now = fixture.nowMs;
     const DurableObject = createJourneyDurableObject({
       providers: [],
       sinks: [
@@ -101,7 +102,7 @@ describe("durable object runtime", () => {
       settings: { getTenant: async () => tenant },
       quietMs: 60_000,
       captureBatches: true,
-      clock: () => fixture.nowMs + 61_000,
+      clock: () => now,
     });
     const instance = new DurableObject({ storage });
 
@@ -146,6 +147,7 @@ describe("durable object runtime", () => {
     expect(response.status).toBe(202);
     expect(storage.alarmAt).not.toBeNull();
 
+    now = fixture.nowMs + 61_000;
     await instance.alarm();
     const batches = instance.stitcher.flush();
     expect(batches).toHaveLength(1);

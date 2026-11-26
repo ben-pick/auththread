@@ -29,6 +29,7 @@ interface FeedSettings {
 
 const NOW = 1_700_000_000_000;
 const traceId = parseTraceId("e5".repeat(16));
+const USER_HASH = `u_${"a".repeat(16)}`;
 
 const adapter: ProviderAdapter<FeedSettings> = {
   id: "fake",
@@ -100,6 +101,7 @@ const spawn = (): Stitcher =>
     sinks: [sink],
     quietMs: 1000,
     captureBatches: true,
+    clock: { now: () => NOW },
   });
 
 const span = (
@@ -129,7 +131,17 @@ describe("end-to-end conformance", () => {
         events: fixture.events,
         expectedOutcome: fixture.expectedOutcome,
       },
-      create: async () => spawn(),
+      create: async () =>
+        createStitcher({
+          providers: [adapter],
+          buffer: createMemoryBuffer(),
+          scheduler: createMemoryScheduler(),
+          settings: createStaticSettings([tenant]),
+          sinks: [sink],
+          quietMs: fixture.quietMs,
+          captureBatches: true,
+          clock: { now: () => NOW },
+        }),
     });
     expect(report.failures).toEqual([]);
     expect(report.ok).toBe(true);
@@ -146,7 +158,7 @@ describe("stitcher", () => {
         tenant: "acme",
         type: "login_failure",
         atMs: NOW,
-        hints: { userHash: "u_alice" },
+        hints: { userHash: USER_HASH },
         attributes: {},
       },
       tenant,
@@ -160,7 +172,7 @@ describe("stitcher", () => {
         attributes: {
           "auth.provider": "fake",
           "auth.tenant": "acme",
-          "auth.user.hash": "u_alice",
+          "auth.user.hash": USER_HASH,
         },
       }),
       tenant,
@@ -263,6 +275,7 @@ describe("stitcher", () => {
       ],
       quietMs: 1000,
       captureBatches: true,
+      clock: { now: () => NOW },
     });
 
     await failing.ingestSpan(

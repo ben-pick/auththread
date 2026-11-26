@@ -1,4 +1,4 @@
-import type { Span, TraceId } from "@auththread/schema";
+import { parseSpanId, type Span, type TraceId } from "@auththread/schema";
 import type { JourneyBuffer, JourneyItem, Scheduler } from "../runtime.ts";
 import type { ConformanceReport } from "./report.ts";
 import { checker } from "./report.ts";
@@ -55,11 +55,20 @@ export async function runRuntimeConformance(
     "read returned duplicate ids",
   );
 
-  const many = Array.from({ length: 20 }, () => item(first));
+  const many = Array.from({ length: 20 }, (_, index) =>
+    item({
+      ...first,
+      spanId: parseSpanId((index + 1).toString(16).padStart(16, "0")),
+    }),
+  );
   await Promise.all(
-    many.map(() => buffer.append(fixture.otherTraceId, item(first))),
+    many.map((entry) => buffer.append(fixture.otherTraceId, entry)),
   );
   const concurrent = await buffer.read(fixture.otherTraceId);
+  result.check(
+    concurrent.length === 20,
+    `concurrent appends stored ${concurrent.length} of 20 distinct items`,
+  );
   result.check(
     new Set(concurrent.map((entry) => entry.id)).size === concurrent.length,
     "concurrent appends produced duplicates",

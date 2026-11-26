@@ -3,8 +3,12 @@ import {
   type Journey,
   type ProviderEvent,
   parseTraceId,
+  type Span,
+  toWideEvent,
 } from "@auththread/schema";
 import { describe, expect, it } from "vitest";
+import type { StitcherLike } from "./conformance/end-to-end.ts";
+import { runEndToEndConformance } from "./conformance/end-to-end.ts";
 import { runProviderConformance } from "./conformance/provider.ts";
 import { runRuntimeConformance } from "./conformance/runtime.ts";
 import { runSinkConformance } from "./conformance/sink.ts";
@@ -250,5 +254,66 @@ describe("buildJourney", () => {
       events: fixture.events,
     });
     expect(built.outcome).toBe(fixture.expectedOutcome);
+  });
+});
+
+describe("end-to-end conformance", () => {
+  const withEvents = journeyCorpus.find((entry) => entry.events.length > 0);
+  if (withEvents === undefined) throw new Error("corpus has no events");
+
+  const droppingStitcher = (): StitcherLike => {
+    const spans: Span[] = [];
+    let now = 0;
+    let flushed = false;
+    return {
+      async ingestSpan(span) {
+        spans.push(span);
+      },
+      async ingestEvent() {
+        // Silently drops provider events.
+      },
+      async runDue(at) {
+        now = at;
+      },
+      flush() {
+        if (flushed || now < withEvents.nowMs + withEvents.quietMs) return [];
+        flushed = true;
+        const journey = buildJourney({
+          traceId: withEvents.traceId,
+          provider: withEvents.provider,
+          tenant: withEvents.tenant,
+          spans,
+          events: [],
+        });
+        return [
+          {
+            sinkId: "capture",
+            journeyId: journey.traceId,
+            spans: [journey.root, ...journey.spans],
+            wideEvent: toWideEvent(journey),
+          },
+        ];
+      },
+    };
+  };
+
+  it("fails a stitcher that silently drops provider events", async () => {
+    const report = await runEndToEndConformance({
+      fixture: {
+        provider: withEvents.provider,
+        tenant: withEvents.tenant,
+        nowMs: withEvents.nowMs,
+        quietMs: withEvents.quietMs,
+        spans: withEvents.spans,
+        events: withEvents.events,
+        expectedOutcome: withEvents.expectedOutcome,
+      },
+      create: async () => droppingStitcher(),
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.failures.join(" ")).toContain(
+      "provider events were not joined",
+    );
   });
 });

@@ -12,7 +12,7 @@ import {
 } from "./storage.ts";
 
 export interface JourneyDurableObjectOptions
-  extends Omit<StitcherOptions, "buffer" | "scheduler"> {
+  extends Omit<StitcherOptions, "buffer" | "scheduler" | "clock"> {
   readonly clock?: () => number;
 }
 
@@ -39,6 +39,7 @@ export function createJourneyDurableObject(
       this.scheduler = createAlarmScheduler(state.storage, now);
       this.stitcher = createStitcher({
         ...options,
+        clock: { now },
         buffer: createDurableObjectBuffer(state.storage),
         scheduler: this.scheduler,
       });

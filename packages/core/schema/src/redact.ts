@@ -1,6 +1,7 @@
 import type { Attributes, AttributeValue } from "./attributes.ts";
 import { NEUTRAL_ATTRIBUTES } from "./attributes.ts";
 import { sha256Hex } from "./sha256.ts";
+import type { Span } from "./span.ts";
 
 const ALLOWED = new Set<string>(NEUTRAL_ATTRIBUTES);
 
@@ -34,6 +35,12 @@ export function redactText(value: string): string {
     .slice(0, MAX_TEXT);
 }
 
+const USER_HASH = /^u_[0-9a-f]{16}$/;
+
+/** A client may send auth.user.hash. Only a real hash is kept. */
+export const isUserHash = (value: unknown): value is string =>
+  typeof value === "string" && USER_HASH.test(value);
+
 function redactValue(value: AttributeValue): AttributeValue {
   if (typeof value === "string") return redactText(value);
   if (Array.isArray(value)) return value.map(redactText);
@@ -54,7 +61,10 @@ export function redactAttributes(
     if (isSecretKey(key)) continue;
 
     if (key === "auth.user.hash") {
-      out[key] = value;
+      if (isUserHash(value)) out[key] = value;
+      else if (typeof value === "string" && settings.salt !== undefined) {
+        out[key] = hashUser(value, settings.salt);
+      }
       continue;
     }
 
@@ -68,4 +78,22 @@ export function redactAttributes(
   }
 
   return out;
+}
+
+/** Applied wherever a span crosses a boundary: emitter or stitcher. */
+export function redactSpan(span: Span, settings: RedactionSettings): Span {
+  return {
+    ...span,
+    attributes: redactAttributes(span.attributes, settings),
+    status: {
+      code: span.status.code,
+      ...(span.status.message === undefined
+        ? {}
+        : { message: redactText(span.status.message) }),
+    },
+    events: span.events.map((event) => ({
+      ...event,
+      attributes: redactAttributes(event.attributes, settings),
+    })),
+  };
 }
