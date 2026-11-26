@@ -1,5 +1,11 @@
 import { parseSpanId, type Span, type TraceId } from "@auththread/schema";
-import type { JourneyBuffer, JourneyItem, Scheduler } from "../runtime.ts";
+import { Effect } from "effect";
+import type { StorageError } from "../errors.ts";
+import type {
+  JourneyBufferService,
+  JourneyItem,
+  SchedulerService,
+} from "../runtime.ts";
 import type { ConformanceReport } from "./report.ts";
 import { checker } from "./report.ts";
 
@@ -12,8 +18,8 @@ export interface RuntimeFixture {
 }
 
 export interface RuntimeConformanceInput {
-  readonly buffer: JourneyBuffer;
-  readonly scheduler: Scheduler;
+  readonly buffer: JourneyBufferService;
+  readonly scheduler: SchedulerService;
   readonly fixture: RuntimeFixture;
 }
 
@@ -24,190 +30,199 @@ const item = (span: Span): JourneyItem => ({
   span,
 });
 
-export async function runRuntimeConformance(
+export const runRuntimeConformance = (
   input: RuntimeConformanceInput,
-): Promise<ConformanceReport> {
-  const { buffer, scheduler, fixture } = input;
-  const result = checker("runtime");
+): Effect.Effect<ConformanceReport, StorageError> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { buffer, scheduler, fixture } = input;
+      const result = checker("runtime");
 
-  const first = fixture.spans[0];
-  if (first === undefined) {
-    result.check(false, "fixture has no spans");
-    return result.report();
-  }
-  const second = fixture.spans[1] ?? first;
+      const first = fixture.spans[0];
+      if (first === undefined) {
+        result.check(false, "fixture has no spans");
+        return result.report();
+      }
+      const second = fixture.spans[1] ?? first;
 
-  await buffer.append(fixture.traceId, item(first));
-  result.check(
-    (await buffer.read(fixture.traceId)).length === 1,
-    "append then read lost an item",
-  );
+      yield* buffer.append(fixture.traceId, item(first));
+      result.check(
+        (yield* buffer.read(fixture.traceId)).length === 1,
+        "append then read lost an item",
+      );
 
-  await buffer.append(fixture.traceId, item(first));
-  result.check(
-    (await buffer.read(fixture.traceId)).length === 1,
-    "a duplicate item was stored twice",
-  );
+      yield* buffer.append(fixture.traceId, item(first));
+      result.check(
+        (yield* buffer.read(fixture.traceId)).length === 1,
+        "a duplicate item was stored twice",
+      );
 
-  await buffer.append(fixture.traceId, item(second));
-  const contents = await buffer.read(fixture.traceId);
-  result.check(
-    new Set(contents.map((entry) => entry.id)).size === contents.length,
-    "read returned duplicate ids",
-  );
+      yield* buffer.append(fixture.traceId, item(second));
+      const contents = yield* buffer.read(fixture.traceId);
+      result.check(
+        new Set(contents.map((entry) => entry.id)).size === contents.length,
+        "read returned duplicate ids",
+      );
 
-  const many = Array.from({ length: 20 }, (_, index) =>
-    item({
-      ...first,
-      spanId: parseSpanId((index + 1).toString(16).padStart(16, "0")),
-    }),
-  );
-  await Promise.all(
-    many.map((entry) => buffer.append(fixture.otherTraceId, entry)),
-  );
-  const concurrent = await buffer.read(fixture.otherTraceId);
-  result.check(
-    concurrent.length === 20,
-    `concurrent appends stored ${concurrent.length} of 20 distinct items`,
-  );
-  result.check(
-    new Set(concurrent.map((entry) => entry.id)).size === concurrent.length,
-    "concurrent appends produced duplicates",
-  );
-  result.check(
-    (await buffer.read(fixture.traceId)).length === 2,
-    "concurrent appends leaked into another trace",
-  );
+      const many = Array.from({ length: 20 }, (_, index) =>
+        item({
+          ...first,
+          spanId: parseSpanId((index + 1).toString(16).padStart(16, "0")),
+        }),
+      );
+      yield* Effect.forEach(
+        many,
+        (entry) => buffer.append(fixture.otherTraceId, entry),
+        { concurrency: "unbounded", discard: true },
+      );
+      const concurrent = yield* buffer.read(fixture.otherTraceId);
+      result.check(
+        concurrent.length === 20,
+        `concurrent appends stored ${concurrent.length} of 20 distinct items`,
+      );
+      result.check(
+        new Set(concurrent.map((entry) => entry.id)).size === concurrent.length,
+        "concurrent appends produced duplicates",
+      );
+      result.check(
+        (yield* buffer.read(fixture.traceId)).length === 2,
+        "concurrent appends leaked into another trace",
+      );
 
-  await buffer.indexHints(
-    fixture.traceId,
-    { tenant: fixture.tenant, userHash: "u_abc", clientId: "client_1" },
-    fixture.nowMs,
-  );
-  const inside = await buffer.findCandidates(
-    { tenant: fixture.tenant, userHash: "u_abc" },
-    2000,
-    fixture.nowMs + 1000,
-  );
-  result.check(
-    inside.includes(fixture.traceId),
-    "a hint inside the window found no candidate",
-  );
-  const outside = await buffer.findCandidates(
-    { tenant: fixture.tenant, userHash: "u_abc" },
-    2000,
-    fixture.nowMs + 5000,
-  );
-  result.check(
-    !outside.includes(fixture.traceId),
-    "a hint outside the window still found a candidate",
-  );
-  result.check(
-    (
-      await buffer.findCandidates(
-        { tenant: fixture.tenant, userHash: "u_none" },
-        2000,
+      yield* buffer.indexHints(
+        fixture.traceId,
+        { tenant: fixture.tenant, userHash: "u_abc", clientId: "client_1" },
         fixture.nowMs,
-      )
-    ).length === 0,
-    "an unknown hint found a candidate",
-  );
-
-  await buffer.indexHints(
-    fixture.otherTraceId,
-    { tenant: fixture.tenant },
-    fixture.nowMs,
-  );
-  result.check(
-    (
-      await buffer.findCandidates(
+      );
+      const inside = yield* buffer.findCandidates(
         { tenant: fixture.tenant, userHash: "u_abc" },
         2000,
         fixture.nowMs + 1000,
-      )
-    ).includes(fixture.otherTraceId) === false,
-    "a tenant-only index matched a user-hash query",
-  );
+      );
+      result.check(
+        inside.includes(fixture.traceId),
+        "a hint inside the window found no candidate",
+      );
+      const outside = yield* buffer.findCandidates(
+        { tenant: fixture.tenant, userHash: "u_abc" },
+        2000,
+        fixture.nowMs + 5000,
+      );
+      result.check(
+        !outside.includes(fixture.traceId),
+        "a hint outside the window still found a candidate",
+      );
+      result.check(
+        (yield* buffer.findCandidates(
+          { tenant: fixture.tenant, userHash: "u_none" },
+          2000,
+          fixture.nowMs,
+        )).length === 0,
+        "an unknown hint found a candidate",
+      );
 
-  await buffer.indexHints(
-    fixture.traceId,
-    { tenant: fixture.tenant, transactionId: "tx_1" },
-    fixture.nowMs,
-  );
-  result.check(
-    (await buffer.findByTransaction(
-      fixture.tenant,
-      "tx_1",
-      2000,
-      fixture.nowMs + 1000,
-    )) === fixture.traceId,
-    "a transaction inside the window found no trace",
-  );
-  result.check(
-    (await buffer.findByTransaction(
-      fixture.tenant,
-      "tx_1",
-      2000,
-      fixture.nowMs + 5000,
-    )) === null,
-    "a transaction outside the window still found a trace",
-  );
-  result.check(
-    (await buffer.findByTransaction(
-      fixture.tenant,
-      "tx_missing",
-      2000,
-      fixture.nowMs,
-    )) === null,
-    "an unknown transaction found a trace",
-  );
-  result.check(
-    (await buffer.findByTransaction(
-      `${fixture.tenant}-other`,
-      "tx_1",
-      2000,
-      fixture.nowMs,
-    )) === null,
-    "a transaction lookup crossed tenants",
-  );
+      yield* buffer.indexHints(
+        fixture.otherTraceId,
+        { tenant: fixture.tenant },
+        fixture.nowMs,
+      );
+      result.check(
+        (yield* buffer.findCandidates(
+          { tenant: fixture.tenant, userHash: "u_abc" },
+          2000,
+          fixture.nowMs + 1000,
+        )).includes(fixture.otherTraceId) === false,
+        "a tenant-only index matched a user-hash query",
+      );
 
-  const fired: TraceId[] = [];
-  scheduler.onDue(async (traceId) => {
-    fired.push(traceId);
-  });
-  await scheduler.schedule(fixture.traceId, fixture.nowMs + 100);
-  await scheduler.schedule(fixture.otherTraceId, fixture.nowMs + 200);
-  await scheduler.runDue(fixture.nowMs + 50);
-  result.check(fired.length === 0, "a timer fired before it was due");
-  await scheduler.runDue(fixture.nowMs + 100);
-  result.check(fired.includes(fixture.traceId), "the first timer did not fire");
-  result.check(
-    !fired.includes(fixture.otherTraceId),
-    "the second timer fired early",
-  );
-  await scheduler.cancel(fixture.otherTraceId);
-  await scheduler.runDue(fixture.nowMs + 300);
-  result.check(
-    !fired.includes(fixture.otherTraceId),
-    "a cancelled timer fired",
-  );
+      yield* buffer.indexHints(
+        fixture.traceId,
+        { tenant: fixture.tenant, transactionId: "tx_1" },
+        fixture.nowMs,
+      );
+      result.check(
+        (yield* buffer.findByTransaction(
+          fixture.tenant,
+          "tx_1",
+          2000,
+          fixture.nowMs + 1000,
+        )) === fixture.traceId,
+        "a transaction inside the window found no trace",
+      );
+      result.check(
+        (yield* buffer.findByTransaction(
+          fixture.tenant,
+          "tx_1",
+          2000,
+          fixture.nowMs + 5000,
+        )) === null,
+        "a transaction outside the window still found a trace",
+      );
+      result.check(
+        (yield* buffer.findByTransaction(
+          fixture.tenant,
+          "tx_missing",
+          2000,
+          fixture.nowMs,
+        )) === null,
+        "an unknown transaction found a trace",
+      );
+      result.check(
+        (yield* buffer.findByTransaction(
+          `${fixture.tenant}-other`,
+          "tx_1",
+          2000,
+          fixture.nowMs,
+        )) === null,
+        "a transaction lookup crossed tenants",
+      );
 
-  await buffer.delete(fixture.otherTraceId);
-  result.check(
-    (await buffer.read(fixture.otherTraceId)).length === 0,
-    "delete did not remove the trace",
-  );
+      const fired: TraceId[] = [];
+      yield* scheduler.onDue((traceId) =>
+        Effect.sync(() => {
+          fired.push(traceId);
+        }),
+      );
+      yield* scheduler.schedule(fixture.traceId, fixture.nowMs + 100);
+      yield* scheduler.schedule(fixture.otherTraceId, fixture.nowMs + 200);
+      yield* scheduler.runDue(fixture.nowMs + 50);
+      result.check(fired.length === 0, "a timer fired before it was due");
+      yield* scheduler.runDue(fixture.nowMs + 100);
+      result.check(
+        fired.includes(fixture.traceId),
+        "the first timer did not fire",
+      );
+      result.check(
+        !fired.includes(fixture.otherTraceId),
+        "the second timer fired early",
+      );
+      yield* scheduler.cancel(fixture.otherTraceId);
+      yield* scheduler.runDue(fixture.nowMs + 300);
+      result.check(
+        !fired.includes(fixture.otherTraceId),
+        "a cancelled timer fired",
+      );
 
-  await buffer.append(
-    fixture.otherTraceId,
-    item({
-      ...first,
-      spanId: second.spanId,
-      startMs: fixture.nowMs - 10_000,
+      yield* buffer.delete(fixture.otherTraceId);
+      result.check(
+        (yield* buffer.read(fixture.otherTraceId)).length === 0,
+        "delete did not remove the trace",
+      );
+
+      yield* buffer.append(
+        fixture.otherTraceId,
+        item({
+          ...first,
+          spanId: second.spanId,
+          startMs: fixture.nowMs - 10_000,
+        }),
+      );
+      const dropped = yield* buffer.prune(fixture.nowMs - 5_000);
+      result.check(
+        dropped === 1,
+        `prune dropped ${dropped} journeys instead of 1`,
+      );
+
+      return result.report();
     }),
   );
-  const dropped = await buffer.prune(fixture.nowMs - 5_000);
-  result.check(dropped === 1, `prune dropped ${dropped} journeys instead of 1`);
-
-  return result.report();
-}

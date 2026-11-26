@@ -4,26 +4,36 @@ import {
   runSinkConformance,
 } from "@auththread/adapter-kit";
 import { isWideEvent } from "@auththread/schema";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
+import { describe, expect } from "vitest";
 import { createWideEventSink } from "./index.ts";
 
 const journeys = journeyCorpus.map(journeyOf);
 
 describe("wide event sink", () => {
-  it("passes sink conformance and writes one JSON line per journey", async () => {
-    const lines: string[] = [];
-    const sink = createWideEventSink({
-      sampling: { keep: ["all"], successRate: 1 },
-      write: (line) => lines.push(line),
-    });
+  it.effect(
+    "passes sink conformance and writes one JSON line per journey",
+    () =>
+      Effect.gen(function* () {
+        const lines: string[] = [];
+        const sink = createWideEventSink({
+          sampling: { keep: ["all"], successRate: 1 },
+          write: (line) => lines.push(line),
+        });
 
-    const report = await runSinkConformance({ sink, journeys, pii: [] });
-    expect(report.failures).toEqual([]);
+        const report = yield* runSinkConformance({ sink, journeys, pii: [] });
+        expect(report.failures).toEqual([]);
 
-    const parsed = JSON.parse(lines[0] ?? "null") as unknown;
-    expect(isWideEvent(parsed)).toBe(true);
-    expect(lines[0]?.includes("\n")).toBe(false);
-  });
+        const parsed = yield* Effect.fromResult(
+          Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))(
+            lines[0] ?? "null",
+          ),
+        );
+        expect(isWideEvent(parsed)).toBe(true);
+        expect(lines[0]?.includes("\n")).toBe(false);
+      }),
+  );
 
   it("drops successful journeys beyond the sampling rate", () => {
     const sink = createWideEventSink({

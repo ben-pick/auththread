@@ -1,91 +1,147 @@
 import {
   DEFAULT_SAMPLING,
+  memoryBufferLayer,
+  memorySchedulerLayer,
   type SamplingPolicy,
+  SettingsError,
   type Sink,
 } from "@auththread/adapter-kit";
 import { auth0Adapter } from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
 import { createOtlpExporter } from "@auththread/otlp";
 import {
-  createFileSettings,
-  createNodeServer,
-  createSQLiteStore,
+  fileSettingsLayer,
+  nodeServerLayer,
+  sqliteStoreLayer,
 } from "@auththread/runtime-node";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWebhookSink } from "@auththread/sink-webhook";
 import { createWideEventSink } from "@auththread/sink-wide-event";
+import { stitcherLayer } from "@auththread/stitcher";
+import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { Config, Effect, Layer, Option, Schema } from "effect";
 
-const env = (name: string): string | undefined => process.env[name];
+interface Env {
+  readonly port: number;
+  readonly quietMs: number;
+  readonly configPath: string;
+  readonly dbPath: string | undefined;
+  readonly sampling: SamplingPolicy;
+  readonly otlpEndpoint: string | undefined;
+  readonly otlpHeaders: Readonly<Record<string, string>>;
+  readonly webhookUrl: string | undefined;
+  readonly webhookSecret: string | undefined;
+}
 
-/** The library default keeps 10% of successes. Set 1 to keep every journey. */
-const sampling = (): SamplingPolicy => {
-  const raw = Number(env("AUTHTHREAD_SAMPLE_SUCCESS") ?? "0.1");
-  const successRate = Number.isFinite(raw)
-    ? Math.min(Math.max(raw, 0), 1)
-    : 0.1;
-  return { ...DEFAULT_SAMPLING, successRate };
-};
+const HeadersSchema = Schema.fromJsonString(
+  Schema.Record(Schema.String, Schema.String),
+);
 
-const sinks = (): Sink[] => {
-  const policy = sampling();
-  const all: Sink[] = [createWideEventSink({ sampling: policy })];
+const optionalString = (name: string) =>
+  Config.String(name).pipe(Config.option, Effect.map(Option.getOrUndefined));
 
-  const otlp = env("OTLP_ENDPOINT");
-  if (otlp !== undefined) {
-    all.push(
+const loadEnv = Effect.gen(function* () {
+  const port = yield* Config.Port("PORT").pipe(Config.withDefault(8787));
+  const quietMs = yield* Config.Number("AUTHTHREAD_QUIET_MS").pipe(
+    Config.withDefault(600_000),
+  );
+  const configPath = yield* Config.String("AUTHTHREAD_CONFIG").pipe(
+    Config.withDefault("/etc/auththread/config.json"),
+  );
+  const dbPath = yield* optionalString("AUTHTHREAD_DB");
+  const sampleSuccess = yield* Config.Number("AUTHTHREAD_SAMPLE_SUCCESS").pipe(
+    Config.withDefault(0.1),
+  );
+  const otlpEndpoint = yield* optionalString("OTLP_ENDPOINT");
+  const otlpHeadersRaw = yield* Config.String("OTLP_HEADERS").pipe(
+    Config.withDefault("{}"),
+  );
+  const webhookUrl = yield* optionalString("WEBHOOK_URL");
+  const webhookSecret = yield* optionalString("WEBHOOK_SECRET");
+
+  const otlpHeaders = yield* Effect.fromResult(
+    Schema.decodeUnknownResult(HeadersSchema)(otlpHeadersRaw),
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SettingsError({
+          message: `OTLP_HEADERS is not a JSON object: ${cause.message}`,
+        }),
+    ),
+  );
+
+  const sampling: SamplingPolicy = {
+    ...DEFAULT_SAMPLING,
+    successRate: Number.isFinite(sampleSuccess)
+      ? Math.min(Math.max(sampleSuccess, 0), 1)
+      : 0.1,
+  };
+
+  return {
+    port,
+    quietMs,
+    configPath,
+    dbPath,
+    sampling,
+    otlpEndpoint,
+    otlpHeaders,
+    webhookUrl,
+    webhookSecret,
+  } satisfies Env;
+});
+
+const sinksFor = (env: Env): readonly Sink[] => {
+  const sinks: Sink[] = [createWideEventSink({ sampling: env.sampling })];
+
+  if (env.otlpEndpoint !== undefined) {
+    sinks.push(
       createOtlpSink({
-        sampling: policy,
+        sampling: env.sampling,
         exporter: createOtlpExporter({
-          endpoint: otlp,
-          serviceName: env("OTEL_SERVICE_NAME") ?? "auththread",
-          headers:
-            env("OTLP_HEADERS") === undefined
-              ? {}
-              : (JSON.parse(env("OTLP_HEADERS") ?? "{}") as Record<
-                  string,
-                  string
-                >),
+          endpoint: env.otlpEndpoint,
+          serviceName: "auththread",
+          headers: env.otlpHeaders,
         }),
       }),
     );
   }
 
-  const webhook = env("WEBHOOK_URL");
-  const secret = env("WEBHOOK_SECRET");
-  if (webhook !== undefined && secret !== undefined) {
-    all.push(createWebhookSink({ url: webhook, secret, sampling: policy }));
+  if (env.webhookUrl !== undefined && env.webhookSecret !== undefined) {
+    sinks.push(
+      createWebhookSink({
+        url: env.webhookUrl,
+        secret: env.webhookSecret,
+        sampling: env.sampling,
+      }),
+    );
   }
 
-  return all;
+  return sinks;
 };
 
-const quietMs = Number(env("AUTHTHREAD_QUIET_MS") ?? "600000");
-const dbPath = env("AUTHTHREAD_DB");
-const sqlite =
-  dbPath === undefined ? null : createSQLiteStore({ path: dbPath, quietMs });
+const program = Effect.gen(function* () {
+  const env = yield* loadEnv;
 
-const server = createNodeServer({
-  providers: [oidcAdapter, auth0Adapter],
-  sinks: sinks(),
-  settings: createFileSettings(
-    env("AUTHTHREAD_CONFIG") ?? "/etc/auththread/config.json",
-  ),
-  quietMs,
-  ...(sqlite === null
-    ? {}
-    : { buffer: sqlite.buffer, scheduler: sqlite.scheduler }),
-  onError: (error) => console.error("auththread:", error),
-});
+  const stores =
+    env.dbPath === undefined
+      ? Layer.mergeAll(memoryBufferLayer, memorySchedulerLayer)
+      : sqliteStoreLayer({ path: env.dbPath, quietMs: env.quietMs });
 
-const port = Number(env("PORT") ?? "8787");
-const { port: bound } = await server.listen(port);
-console.log(`auththread listening on :${bound}`);
+  const http = nodeServerLayer({ port: env.port }).pipe(
+    Layer.provide(
+      stitcherLayer({
+        providers: [oidcAdapter, auth0Adapter],
+        sinks: sinksFor(env),
+        quietMs: env.quietMs,
+        onError: (error) => Effect.logError("auththread", error),
+      }).pipe(
+        Layer.provide(stores),
+        Layer.provide(fileSettingsLayer(env.configPath)),
+      ),
+    ),
+  );
 
-const stop = (): void => {
-  void server.close().then(() => {
-    sqlite?.close();
-    process.exit(0);
-  });
-};
-process.on("SIGTERM", stop);
-process.on("SIGINT", stop);
+  return yield* Layer.launch(http);
+}).pipe(Effect.provide(NodeServices.layer));
+
+NodeRuntime.runMain(program);

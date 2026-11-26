@@ -143,24 +143,32 @@ the edges honest.
 | Layer | Contract | Add one |
 | --- | --- | --- |
 | Provider | `ProviderAdapter`, `Feed`, `ParseContext` | [Adding a provider](docs/adding-a-provider.md) |
-| Runtime | `JourneyBuffer`, `Scheduler`, `SettingsStore`, `Secrets` | [Adding a runtime](docs/adding-a-runtime.md) |
-| Sink | `Sink` with `render`, `write`, optional `flush` and `idempotencyKey` | Copy [`sink-webhook`](packages/sinks/webhook/src/index.ts) or [`sink-object-store`](packages/sinks/object-store/src/index.ts) |
+| Runtime | `JourneyBuffer`, `Scheduler`, `SettingsStore`, `Secrets` Effect services | [Adding a runtime](docs/adding-a-runtime.md) |
+| Sink | `Sink` with `render`, Effect `write`, optional `flush` and `idempotencyKey` | Copy [`sink-webhook`](packages/sinks/webhook/src/index.ts) or [`sink-object-store`](packages/sinks/object-store/src/index.ts) |
 | Browser helper | `BrowserProvider` | Provider package |
 | Hook wrapper | `withTrace` | [`auth0/actions`](packages/providers/auth0/src/actions.ts) |
 | Object storage | `ObjectStore` with one `put` method | [`packages/sinks/object-store`](packages/sinks/object-store/src/store.ts) |
-| HTTP host | `fetch(Request): Promise<Response>` | Mount the stitcher on any Fetch runtime |
+| HTTP host | `httpRoutes` over Effect `HttpRouter`, or the stitcher web port | Mount `nodeServerLayer` or `HttpRouter.toWebHandler` |
 | Conformance | Four runners in `adapter-kit` | A green suite is what "supported" means |
 
 Composition happens in examples, not in core:
 
 ```ts
-const stitcher = createStitcher({
+const stitcher = stitcherLayer({
   providers: [oidcAdapter, auth0Adapter],
-  buffer: createMemoryBuffer(),
-  scheduler: createMemoryScheduler(),
-  settings,
   sinks: [createWideEventSink(), createOtlpSink({ exporter })],
-});
+}).pipe(
+  Layer.provide(
+    Layer.mergeAll(memoryBufferLayer, memorySchedulerLayer, staticSettingsLayer(tenants)),
+  ),
+);
+
+const server = httpRoutes.pipe(
+  Layer.provide(stitcher),
+  Layer.provide(NodeHttpServer.layer(createServer, { port: 8787 })),
+);
+
+Layer.launch(server).pipe(NodeRuntime.runMain);
 ```
 
 ## How it works
@@ -192,12 +200,12 @@ the stitcher agree without a round trip.
 | --- | --- |
 | [`@auththread/schema`](packages/core/schema) | Neutral attributes, redaction, ids, journey and wide event |
 | [`@auththread/otlp`](packages/core/otlp) | OTLP/HTTP JSON encoder and exporters |
-| [`@auththread/adapter-kit`](packages/core/adapter-kit) | Contracts, memory runtime, conformance suites, corpus |
-| [`@auththread/stitcher`](packages/core/stitcher) | `createStitcher`, the Fetch handler and the join |
+| [`@auththread/adapter-kit`](packages/core/adapter-kit) | Effect contracts, memory layers, conformance suites, corpus |
+| [`@auththread/stitcher`](packages/core/stitcher) | `Stitcher` service, Effect HTTP routes and the join |
 | [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
-| [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter |
-| [`@auththread/auth0`](packages/providers/auth0) | Adapter, browser helper, Action wrapper, page snippet |
-| [`@auththread/runtime-node`](packages/runtimes/node) | Node server, timer scheduler, file settings, SQLite buffer |
+| [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter; browser helper at `/browser` |
+| [`@auththread/auth0`](packages/providers/auth0) | Adapter; browser helper at `/browser`, Action wrapper, page snippet |
+| [`@auththread/runtime-node`](packages/runtimes/node) | Node server layer, poll scheduler, file settings, SQLite buffer |
 | [`@auththread/runtime-cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
 | [`@auththread/sink-otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
 | [`@auththread/sink-wide-event`](packages/sinks/wide-event) | One JSON journey per line |
@@ -217,14 +225,14 @@ the stitcher agree without a round trip.
 ## Verification
 
 ```sh
-mise exec -- pnpm check   # types, lint, 137 tests, boundaries, budgets, agent files
+mise exec -- pnpm check   # types, lint, 134 tests, boundaries, budgets, agent files
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
 mise exec -- pnpm budget  # browser SDK 2,659 B gzip, snippet 936 B gzip
 ```
 
-Current status: 25 test files, 137 tests, 97 modules, no boundary violations. See
+Current status: 25 test files, 134 tests, 108 modules, no boundary violations. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap

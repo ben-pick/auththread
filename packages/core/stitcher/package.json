@@ -1,7 +1,7 @@
 {
   "name": "@auththread/stitcher",
   "version": "0.1.0",
-  "description": "Joins browser, hosted page, hook and provider events into one auth journey.",
+  "description": "Effect service that joins browser, hosted page, hook and provider events into one auth journey.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -17,10 +17,12 @@
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
-    "@auththread/schema": "workspace:*"
+    "@auththread/schema": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@auththread/otlp": "workspace:*",
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

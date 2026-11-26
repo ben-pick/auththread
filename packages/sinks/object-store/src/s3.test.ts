@@ -1,11 +1,11 @@
 import { sha256Hex } from "@auththread/schema";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
 import { createS3Store, signRequest } from "./s3.ts";
 
 const EMPTY = sha256Hex("");
 
-// These are the values published in the AWS Signature Version 4 documentation,
-// split so a secret scanner does not treat the example as a live credential.
 const ACCESS_KEY_ID = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
 const SECRET_ACCESS_KEY = ["wJalrXUtnFEMI", "/K7MDENG/bPxRfiCYEXAMPLEKEY"].join(
   "",
@@ -33,72 +33,79 @@ describe("signRequest", () => {
 });
 
 describe("createS3Store", () => {
-  it("sends a signed path-style PUT", async () => {
-    const calls: Array<{ url: string; init: RequestInit }> = [];
-    const store = createS3Store({
-      endpoint: "https://account.r2.cloudflarestorage.com",
-      region: "auto",
-      bucket: "journeys",
-      accessKeyId: "key",
-      secretAccessKey: "secret",
-      now: () => new Date("2026-11-26T05:00:00Z"),
-      fetchImpl: (async (url, init) => {
-        calls.push({ url: String(url), init: init ?? {} });
-        return new Response(null, { status: 200 });
-      }) as typeof fetch,
-    });
+  it.effect("sends a signed path-style PUT", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ url: string; init: RequestInit }> = [];
+      const store = createS3Store({
+        endpoint: "https://account.r2.cloudflarestorage.com",
+        region: "auto",
+        bucket: "journeys",
+        accessKeyId: "key",
+        secretAccessKey: "secret",
+        now: () => new Date("2026-11-26T05:00:00Z"),
+        fetchImpl: (async (url, init) => {
+          calls.push({ url: String(url), init: init ?? {} });
+          return new Response(null, { status: 200 });
+        }) as typeof fetch,
+      });
 
-    await store.put(
-      "auththread/dt=2026-11-26/hour=05/batch-abc.ndjson",
-      '{"traceId":"a"}\n',
-      "application/x-ndjson",
-    );
+      yield* store.put(
+        "auththread/dt=2026-11-26/hour=05/batch-abc.ndjson",
+        '{"traceId":"a"}\n',
+        "application/x-ndjson",
+      );
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe(
-      "https://account.r2.cloudflarestorage.com/journeys/auththread/dt%3D2026-11-26/hour%3D05/batch-abc.ndjson",
-    );
-    const headers = calls[0]?.init.headers as Record<string, string>;
-    expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
-    expect(headers["content-type"]).toBe("application/x-ndjson");
-    expect(calls[0]?.init.method).toBe("PUT");
-  });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.url).toBe(
+        "https://account.r2.cloudflarestorage.com/journeys/auththread/dt%3D2026-11-26/hour%3D05/batch-abc.ndjson",
+      );
+      const headers = calls[0]?.init.headers as Record<string, string>;
+      expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 /);
+      expect(headers["content-type"]).toBe("application/x-ndjson");
+      expect(calls[0]?.init.method).toBe("PUT");
+    }),
+  );
 
-  it("uses a virtual-host URL when configured", async () => {
-    const urls: string[] = [];
-    const store = createS3Store({
-      endpoint: "https://s3.us-east-1.amazonaws.com",
-      region: "us-east-1",
-      bucket: "journeys",
-      accessKeyId: "key",
-      secretAccessKey: "secret",
-      forcePathStyle: false,
-      now: () => new Date("2026-11-26T05:00:00Z"),
-      fetchImpl: (async (url) => {
-        urls.push(String(url));
-        return new Response(null, { status: 200 });
-      }) as typeof fetch,
-    });
+  it.effect("uses a virtual-host URL when configured", () =>
+    Effect.gen(function* () {
+      const urls: string[] = [];
+      const store = createS3Store({
+        endpoint: "https://s3.us-east-1.amazonaws.com",
+        region: "us-east-1",
+        bucket: "journeys",
+        accessKeyId: "key",
+        secretAccessKey: "secret",
+        forcePathStyle: false,
+        now: () => new Date("2026-11-26T05:00:00Z"),
+        fetchImpl: (async (url) => {
+          urls.push(String(url));
+          return new Response(null, { status: 200 });
+        }) as typeof fetch,
+      });
 
-    await store.put("a/b.ndjson", "{}\n", "application/x-ndjson");
-    expect(urls[0]).toBe(
-      "https://journeys.s3.us-east-1.amazonaws.com/a/b.ndjson",
-    );
-  });
+      yield* store.put("a/b.ndjson", "{}\n", "application/x-ndjson");
+      expect(urls[0]).toBe(
+        "https://journeys.s3.us-east-1.amazonaws.com/a/b.ndjson",
+      );
+    }),
+  );
 
-  it("throws with the store status", async () => {
-    const store = createS3Store({
-      endpoint: "https://s3.example.com",
-      region: "us-east-1",
-      bucket: "journeys",
-      accessKeyId: "key",
-      secretAccessKey: "secret",
-      fetchImpl: (async () =>
-        new Response("denied", { status: 403 })) as typeof fetch,
-    });
+  it.effect("fails with the store status", () =>
+    Effect.gen(function* () {
+      const store = createS3Store({
+        endpoint: "https://s3.example.com",
+        region: "us-east-1",
+        bucket: "journeys",
+        accessKeyId: "key",
+        secretAccessKey: "secret",
+        fetchImpl: (async () =>
+          new Response("denied", { status: 403 })) as typeof fetch,
+      });
 
-    await expect(
-      store.put("a.ndjson", "{}\n", "application/x-ndjson"),
-    ).rejects.toThrow("403");
-  });
+      const error = yield* store
+        .put("a.ndjson", "{}\n", "application/x-ndjson")
+        .pipe(Effect.flip);
+      expect(error.message).toContain("403");
+    }),
+  );
 });

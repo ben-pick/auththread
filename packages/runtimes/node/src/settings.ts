@@ -1,93 +1,92 @@
-import { readFileSync } from "node:fs";
-import type { SettingsStore, TenantSettings } from "@auththread/adapter-kit";
+import {
+  SettingsError,
+  SettingsStore,
+  type TenantSettings,
+} from "@auththread/adapter-kit";
 import { sha256Hex } from "@auththread/schema";
+import { Effect, FileSystem, Layer, Schema } from "effect";
 
-interface TenantEntry {
-  readonly tenant: string;
-  readonly provider: string;
-  readonly apiKey?: string;
-  readonly apiKeyHash?: string;
-  readonly salt: string;
-  readonly providerSettings?: unknown;
-}
+const TenantSchema = Schema.Struct({
+  tenant: Schema.String.check(Schema.isMinLength(1)),
+  provider: Schema.String.check(Schema.isMinLength(1)),
+  apiKey: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  apiKeyHash: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+  ),
+  salt: Schema.String.check(Schema.isMinLength(8)),
+  providerSettings: Schema.optionalKey(Schema.Unknown),
+}).check(
+  Schema.makeFilter((tenant) =>
+    tenant.apiKey !== undefined || tenant.apiKeyHash !== undefined
+      ? true
+      : "tenant needs apiKey or apiKeyHash",
+  ),
+);
 
-const fail = (message: string): never => {
-  throw new Error(`invalid auththread config: ${message}`);
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const parseConfig = (value: unknown): TenantEntry[] => {
-  if (!isRecord(value)) return fail("root must be an object");
-  const tenants = value.tenants;
-  if (!Array.isArray(tenants)) return fail("tenants must be an array");
-
-  return tenants.map((entry, index) => {
-    if (!isRecord(entry)) return fail(`tenant ${index} must be an object`);
-    const tenant = entry.tenant;
-    const provider = entry.provider;
-    const salt = entry.salt;
-    if (typeof tenant !== "string" || tenant.length === 0) {
-      return fail(`tenant ${index} needs a tenant`);
-    }
-    if (typeof provider !== "string" || provider.length === 0) {
-      return fail(`tenant ${index} needs a provider`);
-    }
-    if (typeof salt !== "string" || salt.length < 8) {
-      return fail(`tenant ${index} needs a salt of at least 8 characters`);
-    }
-    if (
-      entry.apiKey !== undefined &&
-      (typeof entry.apiKey !== "string" || entry.apiKey.length === 0)
-    ) {
-      return fail(`tenant ${index} has an empty apiKey`);
-    }
-    if (
-      entry.apiKeyHash !== undefined &&
-      (typeof entry.apiKeyHash !== "string" ||
-        !/^[0-9a-f]{64}$/.test(entry.apiKeyHash))
-    ) {
-      return fail(`tenant ${index} has an invalid apiKeyHash`);
-    }
-    if (entry.apiKey === undefined && entry.apiKeyHash === undefined) {
-      return fail(`tenant ${index} needs apiKey or apiKeyHash`);
-    }
-    return {
-      tenant,
-      provider,
-      salt,
-      ...(typeof entry.apiKey === "string" ? { apiKey: entry.apiKey } : {}),
-      ...(typeof entry.apiKeyHash === "string"
-        ? { apiKeyHash: entry.apiKeyHash }
-        : {}),
-      ...(entry.providerSettings === undefined
-        ? {}
-        : { providerSettings: entry.providerSettings }),
-    };
-  });
-};
+const ConfigSchema = Schema.Struct({
+  tenants: Schema.Array(TenantSchema),
+});
 
 /**
  * Reads tenants once at startup. The raw key is hashed in memory and never
  * stored, so the file can come straight from a secret mount.
  */
-export function createFileSettings(path: string): SettingsStore {
-  const entries = parseConfig(
-    JSON.parse(readFileSync(path, "utf8")) as unknown,
-  );
-  const tenants: TenantSettings[] = entries.map((entry) => ({
-    tenant: entry.tenant,
-    provider: entry.provider,
-    apiKeyHash: entry.apiKeyHash ?? sha256Hex(entry.apiKey ?? ""),
-    salt: entry.salt,
-    providerSettings: entry.providerSettings ?? {},
-  }));
-  const byHash = new Map(tenants.map((tenant) => [tenant.apiKeyHash, tenant]));
+export const createFileSettings = (
+  path: string,
+): Effect.Effect<
+  SettingsStore["Service"],
+  SettingsError,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs.readFileString(path).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SettingsError({
+            message: `could not read ${path}`,
+            cause,
+          }),
+      ),
+    );
+    const config = yield* Effect.fromResult(
+      Schema.decodeUnknownResult(Schema.fromJsonString(ConfigSchema))(text),
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new SettingsError({
+            message: `invalid auththread config: ${cause.message}`,
+          }),
+      ),
+    );
 
-  return {
-    async getTenant(apiKeyHash) {
-      return byHash.get(apiKeyHash) ?? null;
-    },
-  };
-}
+    const tenants: TenantSettings[] = [];
+    for (const entry of config.tenants) {
+      const apiKeyHash =
+        entry.apiKeyHash ??
+        (entry.apiKey === undefined ? undefined : sha256Hex(entry.apiKey));
+      if (apiKeyHash === undefined)
+        return yield* new SettingsError({
+          message: `tenant ${entry.tenant} needs apiKey or apiKeyHash`,
+        });
+      tenants.push({
+        tenant: entry.tenant,
+        provider: entry.provider,
+        apiKeyHash,
+        salt: entry.salt,
+        providerSettings: entry.providerSettings ?? {},
+      });
+    }
+
+    const byHash = new Map(
+      tenants.map((tenant) => [tenant.apiKeyHash, tenant]),
+    );
+    return {
+      getTenant: (apiKeyHash) => Effect.succeed(byHash.get(apiKeyHash) ?? null),
+    };
+  });
+
+export const fileSettingsLayer = (
+  path: string,
+): Layer.Layer<SettingsStore, SettingsError, FileSystem.FileSystem> =>
+  Layer.effect(SettingsStore, createFileSettings(path));

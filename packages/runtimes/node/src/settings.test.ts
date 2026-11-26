@@ -2,7 +2,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Hex } from "@auththread/schema";
-import { describe, expect, it } from "vitest";
+import { NodeServices } from "@effect/platform-node";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
+import { describe, expect } from "vitest";
 import { createFileSettings } from "./settings.ts";
 
 const write = (content: string): string => {
@@ -12,60 +15,69 @@ const write = (content: string): string => {
   return path;
 };
 
-describe("createFileSettings", () => {
-  it("hashes the raw key and serves the tenant", async () => {
-    const path = write(
-      JSON.stringify({
-        tenants: [
-          {
-            tenant: "acme",
-            provider: "auth0",
-            apiKey: "at_live_123",
-            salt: "a-long-enough-salt",
-            providerSettings: { feedSecret: "x" },
-          },
-        ],
-      }),
-    );
-    const settings = createFileSettings(path);
-    const tenant = await settings.getTenant(sha256Hex("at_live_123"));
-    expect(tenant?.tenant).toBe("acme");
-    expect(tenant?.providerSettings).toEqual({ feedSecret: "x" });
-    expect(await settings.getTenant(sha256Hex("wrong"))).toBeNull();
-  });
+const load = (path: string) =>
+  createFileSettings(path).pipe(Effect.provide(NodeServices.layer));
 
-  it("accepts a pre-hashed key", async () => {
-    const hash = sha256Hex("at_live_123");
-    const settings = createFileSettings(
-      write(
+describe("createFileSettings", () => {
+  it.effect("hashes the raw key and serves the tenant", () =>
+    Effect.gen(function* () {
+      const path = write(
         JSON.stringify({
           tenants: [
             {
               tenant: "acme",
-              provider: "oidc",
-              apiKeyHash: hash,
+              provider: "auth0",
+              apiKey: "at_live_123",
               salt: "a-long-enough-salt",
+              providerSettings: { feedSecret: "x" },
             },
           ],
         }),
-      ),
-    );
-    expect((await settings.getTenant(hash))?.tenant).toBe("acme");
-  });
+      );
+      const settings = yield* load(path);
+      const tenant = yield* settings.getTenant(sha256Hex("at_live_123"));
+      expect(tenant?.tenant).toBe("acme");
+      expect(tenant?.providerSettings).toEqual({ feedSecret: "x" });
+      expect(yield* settings.getTenant(sha256Hex("wrong"))).toBeNull();
+    }),
+  );
 
-  it("rejects a config that would fail open", () => {
-    expect(() =>
-      createFileSettings(
+  it.effect("accepts a pre-hashed key", () =>
+    Effect.gen(function* () {
+      const hash = sha256Hex("at_live_123");
+      const settings = yield* load(
+        write(
+          JSON.stringify({
+            tenants: [
+              {
+                tenant: "acme",
+                provider: "oidc",
+                apiKeyHash: hash,
+                salt: "a-long-enough-salt",
+              },
+            ],
+          }),
+        ),
+      );
+      expect((yield* settings.getTenant(hash))?.tenant).toBe("acme");
+    }),
+  );
+
+  it.effect("rejects a config that would fail open", () =>
+    Effect.gen(function* () {
+      const missingSalt = yield* load(
         write(
           JSON.stringify({ tenants: [{ tenant: "acme", provider: "oidc" }] }),
         ),
-      ),
-    ).toThrow("salt");
-    expect(() => createFileSettings(write(JSON.stringify({})))).toThrow(
-      "tenants",
-    );
-    expect(() =>
-      createFileSettings(
+      ).pipe(Effect.flip);
+      expect(missingSalt.message).toContain("salt");
+
+      const missingTenants = yield* load(write(JSON.stringify({}))).pipe(
+        Effect.flip,
+      );
+      expect(missingTenants.message).toContain("tenants");
+
+      const emptyKey = yield* load(
         write(
           JSON.stringify({
             tenants: [
@@ -78,7 +90,8 @@ describe("createFileSettings", () => {
             ],
           }),
         ),
-      ),
-    ).toThrow("empty apiKey");
-  });
+      ).pipe(Effect.flip);
+      expect(emptyKey.message).toContain("apiKey");
+    }),
+  );
 });

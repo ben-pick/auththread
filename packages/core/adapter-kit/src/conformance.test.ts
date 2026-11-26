@@ -6,14 +6,19 @@ import {
   type Span,
   toWideEvent,
 } from "@auththread/schema";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { describe, expect } from "vitest";
 import type { StitcherLike } from "./conformance/end-to-end.ts";
-import { runEndToEndConformance } from "./conformance/end-to-end.ts";
+import {
+  runEndToEndConformance,
+  StitcherUnderTest,
+} from "./conformance/end-to-end.ts";
 import { runProviderConformance } from "./conformance/provider.ts";
 import { runRuntimeConformance } from "./conformance/runtime.ts";
 import { runSinkConformance } from "./conformance/sink.ts";
 import { journeyCorpus, journeyOf, piiCorpus } from "./corpus.ts";
-import { createMemoryBuffer, createMemoryScheduler } from "./memory.ts";
+import { memoryBuffer, memoryScheduler } from "./memory.ts";
 import type { ProviderAdapter } from "./provider.ts";
 import type { Sink } from "./sink.ts";
 
@@ -22,41 +27,41 @@ if (fixture === undefined) throw new Error("corpus is empty");
 
 const journeys: Journey[] = journeyCorpus.map(journeyOf);
 
-describe("runtime conformance", () => {
-  it("passes for the memory buffer and scheduler", async () => {
-    const report = await runRuntimeConformance({
-      buffer: createMemoryBuffer(),
-      scheduler: createMemoryScheduler(),
-      fixture: {
-        traceId: fixture.traceId,
-        otherTraceId: parseTraceId("d4".repeat(16)),
-        tenant: "acme",
-        spans: fixture.spans,
-        nowMs: fixture.nowMs,
-      },
-    });
-    expect(report.failures).toEqual([]);
-    expect(report.ok).toBe(true);
-  });
+const runtimeFixture = {
+  traceId: fixture.traceId,
+  otherTraceId: parseTraceId("d4".repeat(16)),
+  tenant: "acme",
+  spans: fixture.spans,
+  nowMs: fixture.nowMs,
+};
 
-  it("fails a buffer that drops appends", async () => {
-    const buffer = createMemoryBuffer();
-    const report = await runRuntimeConformance({
-      buffer: { ...buffer, append: async () => undefined },
-      scheduler: createMemoryScheduler(),
-      fixture: {
-        traceId: fixture.traceId,
-        otherTraceId: parseTraceId("d4".repeat(16)),
-        tenant: "acme",
-        spans: fixture.spans,
-        nowMs: fixture.nowMs,
-      },
-    });
-    expect(report.ok).toBe(false);
-    expect(report.failures.join(" ")).toContain(
-      "append then read lost an item",
-    );
-  });
+describe("runtime conformance", () => {
+  it.effect("passes for the memory buffer and scheduler", () =>
+    Effect.gen(function* () {
+      const report = yield* runRuntimeConformance({
+        buffer: memoryBuffer(),
+        scheduler: memoryScheduler(),
+        fixture: runtimeFixture,
+      });
+      expect(report.failures).toEqual([]);
+      expect(report.ok).toBe(true);
+    }),
+  );
+
+  it.effect("fails a buffer that drops appends", () =>
+    Effect.gen(function* () {
+      const buffer = memoryBuffer();
+      const report = yield* runRuntimeConformance({
+        buffer: { ...buffer, append: () => Effect.void },
+        scheduler: memoryScheduler(),
+        fixture: runtimeFixture,
+      });
+      expect(report.ok).toBe(false);
+      expect(report.failures.join(" ")).toContain(
+        "append then read lost an item",
+      );
+    }),
+  );
 });
 
 interface Settings {
@@ -71,23 +76,24 @@ const fakeAdapter: ProviderAdapter<Settings> = {
     {
       path: "/feed",
       verify: (request, settings) =>
-        request.headers["x-secret"] === settings.secret,
-      parse: (body, context) => {
-        const logs = (
-          body as { logs: Array<{ id: string; user: string; type: string }> }
-        ).logs;
-        return logs.map(
-          (log): ProviderEvent => ({
-            id: log.id,
-            provider: "fake",
-            tenant: "acme",
-            type: log.type,
-            atMs: fixture.nowMs,
-            hints: { userHash: context.hashUser(log.user) },
-            attributes: { "auth.user.hash": context.hashUser(log.user) },
-          }),
-        );
-      },
+        Effect.succeed(request.headers["x-secret"] === settings.secret),
+      parse: (body, context) =>
+        Effect.sync(() => {
+          const logs = (
+            body as { logs: Array<{ id: string; user: string; type: string }> }
+          ).logs;
+          return logs.map(
+            (log): ProviderEvent => ({
+              id: log.id,
+              provider: "fake",
+              tenant: "acme",
+              type: log.type,
+              atMs: fixture.nowMs,
+              hints: { userHash: context.hashUser(log.user) },
+              attributes: { "auth.user.hash": context.hashUser(log.user) },
+            }),
+          );
+        }),
     },
   ],
   correlate: (event) =>
@@ -153,38 +159,50 @@ const providerFixtures = {
 };
 
 describe("provider conformance", () => {
-  it("passes for a conforming adapter", async () => {
-    const report = await runProviderConformance(fakeAdapter, providerFixtures);
-    expect(report.failures).toEqual([]);
-  });
+  it.effect("passes for a conforming adapter", () =>
+    Effect.gen(function* () {
+      const report = yield* runProviderConformance(
+        fakeAdapter,
+        providerFixtures,
+      );
+      expect(report.failures).toEqual([]);
+    }),
+  );
 
-  it("fails an adapter that accepts unverified requests and leaks identifiers", async () => {
-    const broken: ProviderAdapter<Settings> = {
-      ...fakeAdapter,
-      feeds: [
-        {
-          path: "/feed",
-          verify: () => true,
-          parse: (body, context) => {
-            const events = fakeAdapter.feeds?.[0]?.parse(body, context) ?? [];
-            return events.map((event) => ({
-              ...event,
-              attributes: {
-                ...event.attributes,
-                "auth.notes": "alice@example.com",
-              },
-            }));
-          },
-        },
-      ],
-    };
-    const report = await runProviderConformance(broken, providerFixtures);
-    expect(report.ok).toBe(false);
-    expect(report.failures.join(" ")).toContain(
-      "accepted an unverified request",
-    );
-    expect(report.failures.join(" ")).toContain("raw personal data");
-  });
+  it.effect(
+    "fails an adapter that accepts unverified requests and leaks identifiers",
+    () =>
+      Effect.gen(function* () {
+        const broken: ProviderAdapter<Settings> = {
+          ...fakeAdapter,
+          feeds: [
+            {
+              path: "/feed",
+              verify: () => Effect.succeed(true),
+              parse: (body, context) =>
+                Effect.gen(function* () {
+                  const feed = fakeAdapter.feeds?.[0];
+                  const events =
+                    feed === undefined ? [] : yield* feed.parse(body, context);
+                  return events.map((event) => ({
+                    ...event,
+                    attributes: {
+                      ...event.attributes,
+                      "auth.notes": "alice@example.com",
+                    },
+                  }));
+                }),
+            },
+          ],
+        };
+        const report = yield* runProviderConformance(broken, providerFixtures);
+        expect(report.ok).toBe(false);
+        expect(report.failures.join(" ")).toContain(
+          "accepted an unverified request",
+        );
+        expect(report.failures.join(" ")).toContain("raw personal data");
+      }),
+  );
 });
 
 describe("sink conformance", () => {
@@ -214,26 +232,35 @@ describe("sink conformance", () => {
         },
       };
     },
-    async write(batch) {
-      lines.push(JSON.stringify(batch));
-    },
+    write: (batch) =>
+      Effect.sync(() => {
+        lines.push(JSON.stringify(batch));
+      }),
   };
 
-  it("passes for a sink that renders a valid wide event", async () => {
-    const report = await runSinkConformance({ sink, journeys, pii: piiCorpus });
-    expect(report.failures).toEqual([]);
-    expect(lines.length).toBeGreaterThan(0);
-  });
+  it.effect("passes for a sink that renders a valid wide event", () =>
+    Effect.gen(function* () {
+      const report = yield* runSinkConformance({
+        sink,
+        journeys,
+        pii: piiCorpus,
+      });
+      expect(report.failures).toEqual([]);
+      expect(lines.length).toBeGreaterThan(0);
+    }),
+  );
 
-  it("fails a sink that invents an idempotency key", async () => {
-    const broken: Sink = { ...sink, idempotencyKey: () => "random" };
-    const report = await runSinkConformance({
-      sink: broken,
-      journeys,
-      pii: [],
-    });
-    expect(report.ok).toBe(false);
-  });
+  it.effect("fails a sink that invents an idempotency key", () =>
+    Effect.gen(function* () {
+      const broken: Sink = { ...sink, idempotencyKey: () => "random" };
+      const report = yield* runSinkConformance({
+        sink: broken,
+        journeys,
+        pii: [],
+      });
+      expect(report.ok).toBe(false);
+    }),
+  );
 });
 
 describe("journeyOf", () => {
@@ -269,16 +296,16 @@ describe("end-to-end conformance", () => {
     let now = 0;
     let flushed = false;
     return {
-      async ingestSpan(span) {
-        spans.push(span);
-      },
-      async ingestEvent() {
-        // Silently drops provider events.
-      },
-      async runDue(at) {
-        now = at;
-      },
-      flush() {
+      ingestSpan: (span) =>
+        Effect.sync(() => {
+          spans.push(span);
+        }),
+      ingestEvent: () => Effect.void,
+      runDue: (at) =>
+        Effect.sync(() => {
+          now = at;
+        }),
+      flush: Effect.sync(() => {
         if (flushed || now < withEvents.nowMs + withEvents.quietMs) return [];
         flushed = true;
         const journey = buildJourney({
@@ -296,27 +323,29 @@ describe("end-to-end conformance", () => {
             wideEvent: toWideEvent(journey),
           },
         ];
-      },
+      }),
     };
   };
 
-  it("fails a stitcher that silently drops provider events", async () => {
-    const report = await runEndToEndConformance({
-      fixture: {
-        provider: withEvents.provider,
-        tenant: withEvents.tenant,
-        nowMs: withEvents.nowMs,
-        quietMs: withEvents.quietMs,
-        spans: withEvents.spans,
-        events: withEvents.events,
-        expectedOutcome: withEvents.expectedOutcome,
-      },
-      create: async () => droppingStitcher(),
-    });
+  it.effect("fails a stitcher that silently drops provider events", () =>
+    Effect.gen(function* () {
+      const report = yield* runEndToEndConformance({
+        fixture: {
+          provider: withEvents.provider,
+          tenant: withEvents.tenant,
+          nowMs: withEvents.nowMs,
+          quietMs: withEvents.quietMs,
+          spans: withEvents.spans,
+          events: withEvents.events,
+          expectedOutcome: withEvents.expectedOutcome,
+        },
+        create: () => Layer.succeed(StitcherUnderTest, droppingStitcher()),
+      });
 
-    expect(report.ok).toBe(false);
-    expect(report.failures.join(" ")).toContain(
-      "provider events were not joined",
-    );
-  });
+      expect(report.ok).toBe(false);
+      expect(report.failures.join(" ")).toContain(
+        "provider events were not joined",
+      );
+    }),
+  );
 });

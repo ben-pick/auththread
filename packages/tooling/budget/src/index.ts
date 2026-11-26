@@ -63,7 +63,7 @@ export const bundleBrowserSdk = (): Promise<BundleResult> =>
     stdin: {
       contents: [
         'import { init } from "@auththread/browser";',
-        'import { oidcBrowser } from "@auththread/oidc";',
+        'import { oidcBrowser } from "@auththread/oidc/browser";',
         "globalThis.auththread = { init, oidcBrowser };",
       ].join("\n"),
       resolveDir: keycloakDir,

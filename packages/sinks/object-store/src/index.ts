@@ -2,6 +2,7 @@ import {
   DEFAULT_SAMPLING,
   type SamplingPolicy,
   type Sink,
+  type SinkError,
   shouldKeep,
 } from "@auththread/adapter-kit";
 import {
@@ -11,6 +12,7 @@ import {
   toWideEvent,
   type WideEvent,
 } from "@auththread/schema";
+import { Effect, Ref } from "effect";
 import type { ObjectStore } from "./store.ts";
 
 export interface ObjectStoreSinkOptions {
@@ -21,21 +23,16 @@ export interface ObjectStoreSinkOptions {
   readonly maxRows?: number;
   /** Bytes per object before a flush. Default 5 MB. */
   readonly maxBytes?: number;
-  /** Maximum age of a buffered row. Default 60 s. */
-  readonly flushIntervalMs?: number;
   readonly sampling?: SamplingPolicy;
-  readonly onError?: (error: unknown) => void;
-  readonly setTimer?: (callback: () => void, ms: number) => unknown;
-  readonly clearTimer?: (handle: unknown) => void;
 }
 
 export interface ObjectStoreSink extends Sink {
-  flush(): Promise<void>;
+  readonly flush: Effect.Effect<void, SinkError>;
 }
 
 interface PartitionBuffer {
-  rows: WideEvent[];
-  bytes: number;
+  readonly rows: readonly WideEvent[];
+  readonly bytes: number;
 }
 
 const partitionOf = (startedAt: string): string => {
@@ -46,78 +43,58 @@ const partitionOf = (startedAt: string): string => {
   return `dt=${iso.slice(0, 10)}/hour=${iso.slice(11, 13)}`;
 };
 
-export function createObjectStoreSink(
+const emptyBuffer: PartitionBuffer = { rows: [], bytes: 0 };
+
+export const createObjectStoreSink = (
   options: ObjectStoreSinkOptions,
-): ObjectStoreSink {
+): ObjectStoreSink => {
   const sampling = options.sampling ?? DEFAULT_SAMPLING;
   const prefix = (options.prefix ?? "auththread").replace(/^\/+|\/+$/g, "");
   const maxRows = options.maxRows ?? 1000;
   const maxBytes = options.maxBytes ?? 5 * 1024 * 1024;
-  const flushIntervalMs = options.flushIntervalMs ?? 60_000;
-  const setTimer =
-    options.setTimer ??
-    ((callback: () => void, ms: number) => {
-      const handle = setTimeout(callback, ms);
-      (handle as { unref?: () => void }).unref?.();
-      return handle;
+  const buffers = Ref.makeUnsafe(new Map<string, PartitionBuffer>());
+
+  const flushPartition = (partition: string): Effect.Effect<void, SinkError> =>
+    Effect.gen(function* () {
+      const taken = yield* Ref.modify(buffers, (current) => {
+        const buffer = current.get(partition) ?? emptyBuffer;
+        if (buffer.rows.length === 0) return [emptyBuffer, current] as const;
+        const next = new Map(current);
+        next.delete(partition);
+        return [buffer, next] as const;
+      });
+      if (taken.rows.length === 0) return;
+
+      const sorted = [...taken.rows].sort((a, b) =>
+        compareStrings(a.traceId, b.traceId),
+      );
+      const body = `${sorted.map((row) => JSON.stringify(row)).join("\n")}\n`;
+      const key = `${prefix}/${partition}/batch-${sha256Hex(body).slice(0, 16)}.ndjson`;
+
+      yield* options.store.put(key, body, "application/x-ndjson").pipe(
+        Effect.catchTag("SinkError", (error) =>
+          Effect.gen(function* () {
+            yield* Ref.update(buffers, (current) => {
+              const existing = current.get(partition) ?? emptyBuffer;
+              const next = new Map(current);
+              next.set(partition, {
+                rows: [...taken.rows, ...existing.rows],
+                bytes: taken.bytes + existing.bytes,
+              });
+              return next;
+            });
+            return yield* error;
+          }),
+        ),
+      );
     });
-  const clearTimer =
-    options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as never));
 
-  const buffers = new Map<string, PartitionBuffer>();
-  let timer: unknown = null;
-
-  const cancelTimer = (): void => {
-    if (timer === null) return;
-    clearTimer(timer);
-    timer = null;
-  };
-
-  const schedule = (): void => {
-    if (timer !== null) return;
-    timer = setTimer(() => {
-      timer = null;
-      void flushAll().catch((error) => options.onError?.(error));
-    }, flushIntervalMs);
-  };
-
-  async function flushPartition(partition: string): Promise<void> {
-    const buffer = buffers.get(partition);
-    if (buffer === undefined || buffer.rows.length === 0) return;
-
-    const rows = buffer.rows;
-    const bytes = buffer.bytes;
-    buffer.rows = [];
-    buffer.bytes = 0;
-
-    const sorted = [...rows].sort((a, b) =>
-      compareStrings(a.traceId, b.traceId),
-    );
-    const body = `${sorted.map((row) => JSON.stringify(row)).join("\n")}\n`;
-    const key = `${prefix}/${partition}/batch-${sha256Hex(body).slice(0, 16)}.ndjson`;
-
-    try {
-      await options.store.put(key, body, "application/x-ndjson");
-    } catch (error) {
-      buffer.rows = [...rows, ...buffer.rows];
-      buffer.bytes = bytes + buffer.bytes;
-      schedule();
-      throw error;
+  const flushAll: Effect.Effect<void, SinkError> = Effect.gen(function* () {
+    const partitions = [...(yield* Ref.get(buffers)).keys()];
+    for (const partition of partitions) {
+      yield* flushPartition(partition);
     }
-
-    if (buffer.rows.length === 0) {
-      buffers.delete(partition);
-    } else {
-      schedule();
-    }
-  }
-
-  async function flushAll(): Promise<void> {
-    cancelTimer();
-    for (const partition of [...buffers.keys()]) {
-      await flushPartition(partition);
-    }
-  }
+  });
 
   return {
     id: "object-store",
@@ -133,29 +110,35 @@ export function createObjectStoreSink(
       };
     },
 
-    async write(batch) {
-      const wide = batch.wideEvent;
-      if (wide === undefined) return;
+    write: (batch) =>
+      Effect.gen(function* () {
+        const wide = batch.wideEvent;
+        if (wide === undefined) return;
 
-      const partition = partitionOf(wide.startedAt);
-      const buffer = buffers.get(partition) ?? { rows: [], bytes: 0 };
-      buffers.set(partition, buffer);
-      const bytes = JSON.stringify(wide).length + 1;
-      buffer.rows.push(wide);
-      buffer.bytes += bytes;
+        const partition = partitionOf(wide.startedAt);
+        const bytes = JSON.stringify(wide).length + 1;
+        const full = yield* Ref.modify(buffers, (current) => {
+          const buffer = current.get(partition) ?? emptyBuffer;
+          const next = new Map(current);
+          next.set(partition, {
+            rows: [...buffer.rows, wide],
+            bytes: buffer.bytes + bytes,
+          });
+          return [
+            buffer.rows.length + 1 >= maxRows ||
+              buffer.bytes + bytes >= maxBytes,
+            next,
+          ] as const;
+        });
 
-      if (buffer.rows.length >= maxRows || buffer.bytes >= maxBytes) {
-        await flushPartition(partition);
-        return;
-      }
-      schedule();
-    },
+        if (full) yield* flushPartition(partition);
+      }),
 
     flush: flushAll,
 
     idempotencyKey: (batch) => batch.journeyId,
   };
-}
+};
 
 export type { S3StoreOptions } from "./s3.ts";
 export { createS3Store } from "./s3.ts";

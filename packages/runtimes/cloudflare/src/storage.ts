@@ -1,11 +1,12 @@
 import {
   hintKeys,
-  type JourneyBuffer,
+  type JourneyBufferService,
   type JourneyItem,
-  type Scheduler,
+  type SchedulerService,
+  StorageError,
 } from "@auththread/adapter-kit";
-import type { TraceId } from "@auththread/schema";
-import { compareStrings } from "@auththread/schema";
+import { compareStrings, type TraceId } from "@auththread/schema";
+import { Clock, Effect, Ref } from "effect";
 
 /** The subset of Durable Object storage the runtime uses. Tests provide a fake. */
 export interface DurableObjectStorageLike {
@@ -20,6 +21,9 @@ export interface DurableObjectStorageLike {
 export interface DurableObjectStateLike {
   readonly storage: DurableObjectStorageLike;
 }
+
+const storageError = (operation: string, cause: unknown): StorageError =>
+  new StorageError({ operation, cause });
 
 const itemKey = (traceId: TraceId, id: string): string => `j:${traceId}:${id}`;
 const hintKey = (key: string, traceId: TraceId): string =>
@@ -36,182 +40,272 @@ const traceOfItemKey = (key: string): TraceId | null => {
   return parts.length >= 3 ? ((parts[1] ?? null) as TraceId | null) : null;
 };
 
-export function createDurableObjectBuffer(
+export const createDurableObjectBuffer = (
   storage: DurableObjectStorageLike,
-): JourneyBuffer {
-  const deleteTrace = async (traceId: TraceId): Promise<void> => {
-    const items = await storage.list<JourneyItem>({ prefix: `j:${traceId}:` });
-    for (const key of items.keys()) await storage.delete(key);
-    const hints = await storage.list<{ atMs: number }>({ prefix: "h:" });
-    for (const key of hints.keys()) {
-      if (key.endsWith(`:${traceId}`)) await storage.delete(key);
-    }
-    const transactions = await storage.list<{ atMs: number }>({
-      prefix: "x:",
-    });
-    for (const key of transactions.keys()) {
-      if (key.endsWith(`:${traceId}`)) await storage.delete(key);
-    }
-  };
-
-  const buffer: JourneyBuffer = {
-    async append(traceId, item) {
-      await storage.put(itemKey(traceId, item.id), item);
-    },
-    async read(traceId) {
-      const entries = await storage.list<JourneyItem>({
-        prefix: `j:${traceId}:`,
+): JourneyBufferService => {
+  const deleteTrace = (traceId: TraceId): Effect.Effect<void, StorageError> =>
+    Effect.gen(function* () {
+      const items = yield* Effect.tryPromise({
+        try: () => storage.list<JourneyItem>({ prefix: `j:${traceId}:` }),
+        catch: (cause) => storageError("delete", cause),
       });
-      return [...entries.values()];
-    },
-    async delete(traceId) {
-      await deleteTrace(traceId);
-    },
-    async indexHints(traceId, hints, atMs) {
-      for (const key of hintKeys(hints)) {
-        const storageKey = hintKey(key, traceId);
-        const existing = await storage.get<{ atMs: number }>(storageKey);
-        await storage.put(storageKey, {
-          atMs: Math.max(existing?.atMs ?? 0, atMs),
+      for (const key of items.keys())
+        yield* Effect.tryPromise({
+          try: () => storage.delete(key),
+          catch: (cause) => storageError("delete", cause),
         });
+      const hints = yield* Effect.tryPromise({
+        try: () => storage.list<{ atMs: number }>({ prefix: "h:" }),
+        catch: (cause) => storageError("delete", cause),
+      });
+      for (const key of hints.keys()) {
+        if (key.endsWith(`:${traceId}`))
+          yield* Effect.tryPromise({
+            try: () => storage.delete(key),
+            catch: (cause) => storageError("delete", cause),
+          });
       }
-      if (hints.transactionId !== undefined) {
-        const storageKey = transactionKey(
-          hints.tenant ?? "",
-          hints.transactionId,
-          traceId,
-        );
-        const existing = await storage.get<{ atMs: number }>(storageKey);
-        await storage.put(storageKey, {
-          atMs: Math.max(existing?.atMs ?? 0, atMs),
-        });
+      const transactions = yield* Effect.tryPromise({
+        try: () => storage.list<{ atMs: number }>({ prefix: "x:" }),
+        catch: (cause) => storageError("delete", cause),
+      });
+      for (const key of transactions.keys()) {
+        if (key.endsWith(`:${traceId}`))
+          yield* Effect.tryPromise({
+            try: () => storage.delete(key),
+            catch: (cause) => storageError("delete", cause),
+          });
       }
-    },
-    async findByTransaction(tenant, transactionId, windowMs, nowMs) {
-      const prefix = `x:${tenant}:${transactionId}:`;
-      const entries = await storage.list<{ atMs: number }>({ prefix });
+    });
 
-      let best: TraceId | null = null;
-      let bestAt = -1;
-      for (const [key, entry] of entries) {
-        if (Math.abs(nowMs - entry.atMs) > windowMs) continue;
-        const traceId = key.slice(prefix.length) as TraceId;
-        if (
-          entry.atMs > bestAt ||
-          (entry.atMs === bestAt &&
-            (best === null || compareStrings(traceId, best) < 0))
-        ) {
-          best = traceId;
-          bestAt = entry.atMs;
+  return {
+    append: (traceId, item) =>
+      Effect.tryPromise({
+        try: () => storage.put(itemKey(traceId, item.id), item),
+        catch: (cause) => storageError("append", cause),
+      }),
+    read: (traceId) =>
+      Effect.gen(function* () {
+        const entries = yield* Effect.tryPromise({
+          try: () => storage.list<JourneyItem>({ prefix: `j:${traceId}:` }),
+          catch: (cause) => storageError("read", cause),
+        });
+        return [...entries.values()];
+      }),
+    delete: deleteTrace,
+    indexHints: (traceId, hints, atMs) =>
+      Effect.gen(function* () {
+        for (const key of hintKeys(hints)) {
+          const storageKey = hintKey(key, traceId);
+          const existing = yield* Effect.tryPromise({
+            try: () => storage.get<{ atMs: number }>(storageKey),
+            catch: (cause) => storageError("indexHints", cause),
+          });
+          yield* Effect.tryPromise({
+            try: () =>
+              storage.put(storageKey, {
+                atMs: Math.max(existing?.atMs ?? 0, atMs),
+              }),
+            catch: (cause) => storageError("indexHints", cause),
+          });
         }
-      }
-      return best;
-    },
-    async findCandidates(hints, windowMs, nowMs) {
-      const keys = hintKeys(hints);
-      if (keys.length === 0) return [];
-
-      let candidates: Set<TraceId> | null = null;
-      for (const key of keys) {
-        const entries = await storage.list<{ atMs: number }>({
-          prefix: `h:${key}:`,
-        });
-        const matching = new Set<TraceId>();
-        for (const [entryKey, entry] of entries) {
-          if (Math.abs(nowMs - entry.atMs) > windowMs) continue;
-          matching.add(
-            entryKey.slice(entryKey.lastIndexOf(":") + 1) as TraceId,
+        if (hints.transactionId !== undefined) {
+          const storageKey = transactionKey(
+            hints.tenant ?? "",
+            hints.transactionId,
+            traceId,
           );
+          const existing = yield* Effect.tryPromise({
+            try: () => storage.get<{ atMs: number }>(storageKey),
+            catch: (cause) => storageError("indexHints", cause),
+          });
+          yield* Effect.tryPromise({
+            try: () =>
+              storage.put(storageKey, {
+                atMs: Math.max(existing?.atMs ?? 0, atMs),
+              }),
+            catch: (cause) => storageError("indexHints", cause),
+          });
         }
-        if (candidates === null) {
-          candidates = matching;
-        } else {
-          const next = new Set<TraceId>();
-          for (const traceId of candidates) {
-            if (matching.has(traceId)) next.add(traceId);
+      }),
+    findByTransaction: (tenant, transactionId, windowMs, nowMs) =>
+      Effect.gen(function* () {
+        const prefix = `x:${tenant}:${transactionId}:`;
+        const entries = yield* Effect.tryPromise({
+          try: () => storage.list<{ atMs: number }>({ prefix }),
+          catch: (cause) => storageError("findByTransaction", cause),
+        });
+
+        let best: TraceId | null = null;
+        let bestAt = -1;
+        for (const [key, entry] of entries) {
+          if (Math.abs(nowMs - entry.atMs) > windowMs) continue;
+          const traceId = key.slice(prefix.length) as TraceId;
+          if (
+            entry.atMs > bestAt ||
+            (entry.atMs === bestAt &&
+              (best === null || compareStrings(traceId, best) < 0))
+          ) {
+            best = traceId;
+            bestAt = entry.atMs;
           }
-          candidates = next;
         }
-        if (candidates.size === 0) return [];
-      }
+        return best;
+      }),
+    findCandidates: (hints, windowMs, nowMs) =>
+      Effect.gen(function* () {
+        const keys = hintKeys(hints);
+        if (keys.length === 0) return [];
 
-      const result: Set<TraceId> = candidates ?? new Set();
-      return [...result].sort(compareStrings);
-    },
-    async prune(beforeMs) {
-      const items = await storage.list<JourneyItem>({ prefix: "j:" });
-      const newest = new Map<TraceId, number>();
-      for (const [key, item] of items) {
-        const traceId = traceOfItemKey(key);
-        if (traceId === null) continue;
-        newest.set(traceId, Math.max(newest.get(traceId) ?? 0, item.atMs));
-      }
-      let dropped = 0;
-      for (const [traceId, atMs] of newest) {
-        if (atMs >= beforeMs) continue;
-        await deleteTrace(traceId);
-        dropped += 1;
-      }
-      return dropped;
-    },
+        let candidates: Set<TraceId> | null = null;
+        for (const key of keys) {
+          const entries = yield* Effect.tryPromise({
+            try: () => storage.list<{ atMs: number }>({ prefix: `h:${key}:` }),
+            catch: (cause) => storageError("findCandidates", cause),
+          });
+          const matching = new Set<TraceId>();
+          for (const [entryKey, entry] of entries) {
+            if (Math.abs(nowMs - entry.atMs) > windowMs) continue;
+            matching.add(
+              entryKey.slice(entryKey.lastIndexOf(":") + 1) as TraceId,
+            );
+          }
+          if (candidates === null) {
+            candidates = matching;
+          } else {
+            const next = new Set<TraceId>();
+            for (const traceId of candidates) {
+              if (matching.has(traceId)) next.add(traceId);
+            }
+            candidates = next;
+          }
+          if (candidates.size === 0) return [];
+        }
+
+        return [...(candidates ?? new Set<TraceId>())].sort(compareStrings);
+      }),
+    prune: (beforeMs) =>
+      Effect.gen(function* () {
+        const items = yield* Effect.tryPromise({
+          try: () => storage.list<JourneyItem>({ prefix: "j:" }),
+          catch: (cause) => storageError("prune", cause),
+        });
+        const newest = new Map<TraceId, number>();
+        for (const [key, item] of items) {
+          const traceId = traceOfItemKey(key);
+          if (traceId === null) continue;
+          newest.set(traceId, Math.max(newest.get(traceId) ?? 0, item.atMs));
+        }
+        let dropped = 0;
+        for (const [traceId, atMs] of newest) {
+          if (atMs >= beforeMs) continue;
+          yield* deleteTrace(traceId);
+          dropped += 1;
+        }
+        return dropped;
+      }),
   };
+};
 
-  return buffer;
-}
-
-export interface AlarmScheduler extends Scheduler {
-  alarm(): Promise<void>;
-}
+export type AlarmScheduler = SchedulerService & {
+  readonly alarm: Effect.Effect<void, StorageError>;
+};
 
 /**
  * One alarm per object, fired at the earliest deadline. Every schedule recomputes
  * the minimum, so a quiet period extends cleanly when a late span arrives.
  */
-export function createAlarmScheduler(
+export const createAlarmScheduler = (
   storage: DurableObjectStorageLike,
-  clock: () => number = () => Date.now(),
-): AlarmScheduler {
-  const handlers: Array<(traceId: TraceId) => Promise<void>> = [];
+  clock: Effect.Effect<number> = Clock.currentTimeMillis,
+): AlarmScheduler => {
+  const handlers = Ref.makeUnsafe(
+    new Set<
+      (traceId: TraceId, nowMs: number) => Effect.Effect<void, StorageError>
+    >(),
+  );
 
-  const align = async (): Promise<void> => {
-    const deadlines = await storage.list<{ atMs: number }>({ prefix: "a:" });
-    let earliest: number | null = null;
-    for (const entry of deadlines.values()) {
-      if (earliest === null || entry.atMs < earliest) earliest = entry.atMs;
-    }
-    if (earliest === null) await storage.deleteAlarm();
-    else await storage.setAlarm(earliest);
-  };
+  const deadlines = (): Effect.Effect<
+    Map<string, { atMs: number }>,
+    StorageError
+  > =>
+    Effect.tryPromise({
+      try: () => storage.list<{ atMs: number }>({ prefix: "a:" }),
+      catch: (cause) => storageError("alarm", cause),
+    });
 
-  const due = async (nowMs: number): Promise<TraceId[]> => {
-    const deadlines = await storage.list<{ atMs: number }>({ prefix: "a:" });
-    return [...deadlines.entries()]
-      .filter(([, entry]) => entry.atMs <= nowMs)
-      .sort(([, a], [, b]) => a.atMs - b.atMs)
-      .map(([key]) => key.slice(2) as TraceId);
-  };
+  const align = (): Effect.Effect<void, StorageError> =>
+    Effect.gen(function* () {
+      const entries = yield* deadlines();
+      let earliest: number | null = null;
+      for (const entry of entries.values()) {
+        if (earliest === null || entry.atMs < earliest) earliest = entry.atMs;
+      }
+      yield* Effect.tryPromise({
+        try: () =>
+          earliest === null
+            ? storage.deleteAlarm()
+            : storage.setAlarm(earliest),
+        catch: (cause) => storageError("alarm", cause),
+      });
+    });
+
+  const due = (nowMs: number): Effect.Effect<TraceId[], StorageError> =>
+    Effect.gen(function* () {
+      const entries = yield* deadlines();
+      return [...entries.entries()]
+        .filter(([, entry]) => entry.atMs <= nowMs)
+        .sort(([, a], [, b]) => a.atMs - b.atMs)
+        .map(([key]) => key.slice(2) as TraceId);
+    });
+
+  const runDue = (nowMs: number): Effect.Effect<void, StorageError> =>
+    Effect.gen(function* () {
+      for (const traceId of yield* due(nowMs)) {
+        yield* Effect.tryPromise({
+          try: () => storage.delete(alarmKey(traceId)),
+          catch: (cause) => storageError("alarm", cause),
+        });
+        for (const handler of yield* Ref.get(handlers)) {
+          yield* handler(traceId, nowMs);
+        }
+      }
+      yield* align();
+    });
 
   return {
-    async schedule(traceId, atMs) {
-      await storage.put(alarmKey(traceId), { atMs });
-      await align();
-    },
-    async cancel(traceId) {
-      await storage.delete(alarmKey(traceId));
-      await align();
-    },
-    onDue(handler) {
-      handlers.push(handler);
-    },
-    async runDue(nowMs) {
-      for (const traceId of await due(nowMs)) {
-        await storage.delete(alarmKey(traceId));
-        for (const handler of handlers) await handler(traceId);
-      }
-      await align();
-    },
-    async alarm() {
-      await this.runDue(clock());
-    },
+    schedule: (traceId, atMs) =>
+      Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => storage.put(alarmKey(traceId), { atMs }),
+          catch: (cause) => storageError("schedule", cause),
+        });
+        yield* align();
+      }),
+    cancel: (traceId) =>
+      Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => storage.delete(alarmKey(traceId)),
+          catch: (cause) => storageError("cancel", cause),
+        });
+        yield* align();
+      }),
+    onDue: (handler) =>
+      Effect.acquireRelease(
+        Ref.update(handlers, (current) => new Set([...current, handler])),
+        () =>
+          Ref.update(handlers, (current) => {
+            const next = new Set(current);
+            next.delete(handler);
+            return next;
+          }),
+      ),
+    runDue,
+    alarm: Effect.gen(function* () {
+      const nowMs = yield* clock;
+      yield* runDue(nowMs);
+    }),
   };
-}
+};
+
+export type { JourneyBufferService, SchedulerService };

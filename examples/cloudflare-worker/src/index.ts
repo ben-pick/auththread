@@ -1,8 +1,10 @@
 import {
-  createStaticSettings,
   DEFAULT_SAMPLING,
   type SamplingPolicy,
+  SettingsError,
+  SettingsStore,
   type Sink,
+  staticSettings,
   type TenantSettings,
 } from "@auththread/adapter-kit";
 import { type Auth0FeedSettings, auth0Adapter } from "@auththread/auth0";
@@ -11,11 +13,14 @@ import { createOtlpExporter } from "@auththread/otlp";
 import {
   createJourneyDurableObject,
   createKeyDirectory,
+  type DurableObjectStateLike,
+  type JourneyDurableObjectInstance,
   type KeyDirectory,
 } from "@auththread/runtime-cloudflare";
 import { sha256Hex } from "@auththread/schema";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWideEventSink } from "@auththread/sink-wide-event";
+import { Effect, Layer, Option, Schema } from "effect";
 
 export interface Env {
   readonly JOURNEY: DurableObjectNamespace;
@@ -35,29 +40,44 @@ interface DurableObjectId {
   readonly name?: string;
 }
 
-interface TenantConfig {
-  readonly tenants: Array<{
-    readonly tenant: string;
-    readonly provider: string;
-    readonly apiKey: string;
-    readonly salt: string;
-    readonly providerSettings?: Auth0FeedSettings;
-  }>;
-}
+const TenantSchema = Schema.Struct({
+  tenant: Schema.String.check(Schema.isMinLength(1)),
+  provider: Schema.String.check(Schema.isMinLength(1)),
+  apiKey: Schema.String.check(Schema.isMinLength(1)),
+  salt: Schema.String.check(Schema.isMinLength(8)),
+  providerSettings: Schema.optionalKey(Schema.Unknown),
+});
 
-const parseTenants = (value: string): TenantConfig => {
-  const parsed = JSON.parse(value) as TenantConfig;
-  if (!Array.isArray(parsed.tenants))
-    throw new Error("AUTHTHREAD_TENANTS needs a tenants array");
-  return parsed;
+const TenantConfigSchema = Schema.fromJsonString(
+  Schema.Struct({ tenants: Schema.Array(TenantSchema) }),
+);
+
+const HeadersSchema = Schema.fromJsonString(
+  Schema.Record(Schema.String, Schema.String),
+);
+
+const configFor = (source: string) =>
+  Schema.decodeUnknownResult(TenantConfigSchema)(source);
+
+const samplingOf = (raw: string | undefined): SamplingPolicy => {
+  const parsed = Number(raw ?? "0.1");
+  return {
+    ...DEFAULT_SAMPLING,
+    successRate: Number.isFinite(parsed)
+      ? Math.min(Math.max(parsed, 0), 1)
+      : 0.1,
+  };
 };
 
-const sinksFor = (env: Env): Sink[] => {
-  const raw = Number(env.AUTHTHREAD_SAMPLE_SUCCESS ?? "0.1");
-  const sampling: SamplingPolicy = {
-    ...DEFAULT_SAMPLING,
-    successRate: Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0.1,
-  };
+const sinksFor = (env: Env): readonly Sink[] => {
+  const sampling = samplingOf(env.AUTHTHREAD_SAMPLE_SUCCESS);
+  const headers =
+    env.OTLP_HEADERS === undefined
+      ? {}
+      : Option.getOrElse(
+          Schema.decodeUnknownOption(HeadersSchema)(env.OTLP_HEADERS),
+          () => ({}),
+        );
 
   return [
     createWideEventSink({ sampling }),
@@ -69,10 +89,7 @@ const sinksFor = (env: Env): Sink[] => {
             exporter: createOtlpExporter({
               endpoint: env.OTLP_ENDPOINT,
               serviceName: "auththread",
-              headers:
-                env.OTLP_HEADERS === undefined
-                  ? {}
-                  : (JSON.parse(env.OTLP_HEADERS) as Record<string, string>),
+              headers,
             }),
           }),
         ]),
@@ -80,28 +97,31 @@ const sinksFor = (env: Env): Sink[] => {
 };
 
 export class JourneyDurableObject {
-  readonly inner: InstanceType<ReturnType<typeof createJourneyDurableObject>>;
+  readonly inner: JourneyDurableObjectInstance;
 
   constructor(state: unknown, env: Env) {
-    const config = parseTenants(env.AUTHTHREAD_TENANTS);
-    const tenants: TenantSettings<Auth0FeedSettings>[] = config.tenants.map(
-      (tenant) => ({
+    const decoded = configFor(env.AUTHTHREAD_TENANTS);
+    if (decoded._tag === "Failure")
+      throw new Error(`invalid AUTHTHREAD_TENANTS: ${decoded.failure.message}`);
+
+    const tenants: TenantSettings<Auth0FeedSettings>[] =
+      decoded.success.tenants.map((tenant) => ({
         tenant: tenant.tenant,
         provider: tenant.provider,
         apiKeyHash: sha256Hex(tenant.apiKey),
         salt: tenant.salt,
-        providerSettings: tenant.providerSettings ?? {},
-      }),
-    );
+        providerSettings:
+          (tenant.providerSettings as Auth0FeedSettings | undefined) ?? {},
+      }));
 
     const DurableObject = createJourneyDurableObject({
       providers: [oidcAdapter, auth0Adapter],
       sinks: sinksFor(env),
-      settings: createStaticSettings(tenants),
+      settings: Layer.succeed(SettingsStore, staticSettings(tenants)),
       captureBatches: false,
       quietMs: Number(env.AUTHTHREAD_QUIET_MS ?? "600000"),
     });
-    this.inner = new DurableObject(state as never);
+    this.inner = new DurableObject(state as DurableObjectStateLike);
   }
 
   fetch(request: Request): Promise<Response> {
@@ -123,37 +143,67 @@ const CORS: Record<string, string> = {
 
 let cached: { source: string; directory: KeyDirectory } | null = null;
 
-const directoryFor = (source: string): KeyDirectory => {
-  if (cached?.source === source) return cached.directory;
-  const config = parseTenants(source);
-  const directory = createKeyDirectory(
-    config.tenants.map((tenant) => ({
-      tenant: tenant.tenant,
-      apiKey: tenant.apiKey,
-    })),
-  );
-  cached = { source, directory };
-  return directory;
-};
+const directoryFor = (
+  source: string,
+): Effect.Effect<KeyDirectory, SettingsError> =>
+  Effect.gen(function* () {
+    if (cached?.source === source) return cached.directory;
+    const decoded = configFor(source);
+    if (decoded._tag === "Failure")
+      return yield* new SettingsError({
+        message: `invalid AUTHTHREAD_TENANTS: ${decoded.failure.message}`,
+      });
+    const directory = yield* createKeyDirectory(
+      decoded.success.tenants.map((tenant) => ({
+        tenant: tenant.tenant,
+        apiKey: tenant.apiKey,
+      })),
+    );
+    cached = { source, directory };
+    return directory;
+  });
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS });
-    }
-    if (new URL(request.url).pathname === "/healthz") {
-      return Response.json({ ok: true });
-    }
+  fetch(request: Request, env: Env): Promise<Response> {
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        if (request.method === "OPTIONS") {
+          return new Response(null, { status: 204, headers: CORS });
+        }
+        if (new URL(request.url).pathname === "/healthz") {
+          return Response.json({ ok: true });
+        }
 
-    const tenant = await directoryFor(env.AUTHTHREAD_TENANTS).resolve(request);
-    if (tenant === null) {
-      return Response.json(
-        { error: "unauthorized" },
-        { status: 401, headers: CORS },
-      );
-    }
+        return yield* Effect.gen(function* () {
+          const directory = yield* directoryFor(env.AUTHTHREAD_TENANTS);
+          const tenant = yield* directory.resolve(request);
+          if (tenant === null)
+            return Response.json(
+              { error: "unauthorized" },
+              { status: 401, headers: CORS },
+            );
 
-    const id = env.JOURNEY.idFromName(tenant);
-    return env.JOURNEY.get(id).fetch(request);
+          const id = env.JOURNEY.idFromName(tenant);
+          return yield* Effect.tryPromise({
+            try: () => env.JOURNEY.get(id).fetch(request),
+            catch: (cause) =>
+              new SettingsError({
+                message:
+                  "the journey Durable Object could not serve the request",
+                cause,
+              }),
+          });
+        }).pipe(
+          Effect.catchCause(() =>
+            Effect.succeed(
+              Response.json(
+                { error: "internal" },
+                { status: 500, headers: CORS },
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   },
 };

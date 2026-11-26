@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  JourneyBuffer,
   journeyCorpus,
   runRuntimeConformance,
+  Scheduler,
+  SettingsStore,
   type TenantSettings,
 } from "@auththread/adapter-kit";
 import {
@@ -14,8 +17,10 @@ import {
   type Span,
   type TraceId,
 } from "@auththread/schema";
-import { createStitcher } from "@auththread/stitcher";
-import { describe, expect, it } from "vitest";
+import { Stitcher, stitcherLayer } from "@auththread/stitcher";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { describe, expect } from "vitest";
 import { createSQLiteStore } from "./sqlite.ts";
 
 const NOW = 1_700_000_000_000;
@@ -49,147 +54,195 @@ const span = (
 
 const dir = (): string => mkdtempSync(join(tmpdir(), "auththread-sqlite-"));
 
+const settingsLayer = Layer.succeed(SettingsStore, {
+  getTenant: () => Effect.succeed(tenant),
+});
+
+const stitcherOn = (
+  buffer: JourneyBuffer["Service"],
+  scheduler: Scheduler["Service"],
+  sinks: Parameters<typeof stitcherLayer>[0]["sinks"],
+) =>
+  stitcherLayer({
+    providers: [],
+    sinks,
+    quietMs: 1000,
+    now: Effect.succeed(NOW),
+  }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(JourneyBuffer, buffer),
+        Layer.succeed(Scheduler, scheduler),
+        settingsLayer,
+      ),
+    ),
+  );
+
 describe("sqlite store", () => {
-  it("uses WAL", () => {
-    const path = join(dir(), "state.db");
-    const store = createSQLiteStore({ path, autoStart: false });
-    store.close();
+  it.effect("uses WAL", () =>
+    Effect.gen(function* () {
+      const path = join(dir(), "state.db");
+      yield* createSQLiteStore({ path, autoStart: false });
 
-    const db = new DatabaseSync(path);
-    const mode = db.prepare("PRAGMA journal_mode").get() as {
-      journal_mode: string;
-    };
-    db.close();
-    expect(mode.journal_mode).toBe("wal");
-  });
+      const db = new DatabaseSync(path);
+      const mode = db.prepare("PRAGMA journal_mode").get() as {
+        journal_mode: string;
+      };
+      db.close();
+      expect(mode.journal_mode).toBe("wal");
+    }),
+  );
 
-  it("passes runtime conformance", async () => {
-    const fixture = journeyCorpus[0];
-    if (fixture === undefined) throw new Error("missing fixture");
+  it.effect("passes runtime conformance", () =>
+    Effect.gen(function* () {
+      const fixture = journeyCorpus[0];
+      if (fixture === undefined) throw new Error("missing fixture");
 
-    const store = createSQLiteStore({
-      path: join(dir(), "state.db"),
-      quietMs: fixture.quietMs,
-      autoStart: false,
-    });
+      const store = yield* createSQLiteStore({
+        path: join(dir(), "state.db"),
+        quietMs: fixture.quietMs,
+        autoStart: false,
+      });
 
-    const report = await runRuntimeConformance({
-      buffer: store.buffer,
-      scheduler: store.scheduler,
-      fixture: {
-        traceId: fixture.traceId,
-        otherTraceId: "d4".repeat(16) as TraceId,
-        tenant: "acme",
-        spans: fixture.spans,
-        nowMs: fixture.nowMs,
-      },
-    });
+      const report = yield* runRuntimeConformance({
+        buffer: store.buffer,
+        scheduler: store.scheduler,
+        fixture: {
+          traceId: fixture.traceId,
+          otherTraceId: parseTraceId("d4".repeat(16)),
+          tenant: "acme",
+          spans: fixture.spans,
+          nowMs: fixture.nowMs,
+        },
+      });
 
-    expect(report.failures).toEqual([]);
-    expect(report.ok).toBe(true);
-    store.close();
-  });
+      expect(report.failures).toEqual([]);
+      expect(report.ok).toBe(true);
+    }),
+  );
 
-  it("recovers an in-flight journey after a restart", async () => {
-    const path = join(dir(), "state.db");
-    const first = createSQLiteStore({ path, quietMs: 1000, autoStart: false });
-    const firstStitcher = createStitcher({
-      providers: [],
-      buffer: first.buffer,
-      scheduler: first.scheduler,
-      settings: { getTenant: async () => tenant },
-      sinks: [],
-      quietMs: 1000,
-      clock: { now: () => NOW },
-    });
+  it.effect("recovers an in-flight journey after a restart", () =>
+    Effect.gen(function* () {
+      const path = join(dir(), "state.db");
 
-    await firstStitcher.ingestSpan(
-      span(TRACE, "1111111111111111", "auth.app.login_start", NOW),
-      tenant,
-    );
-    await firstStitcher.ingestSpan(
-      span(TRACE, "2222222222222222", "auth.app.callback", NOW + 100, "ok"),
-      tenant,
-    );
-    first.close();
-
-    const captured: Array<{ outcome: string }> = [];
-    const second = createSQLiteStore({ path, quietMs: 1000, autoStart: false });
-    const secondStitcher = createStitcher({
-      providers: [],
-      buffer: second.buffer,
-      scheduler: second.scheduler,
-      settings: { getTenant: async () => tenant },
-      sinks: [
-        {
-          id: "capture",
-          accepts: ["journey"],
-          sampling: { keep: ["all"], successRate: 1 },
-          render: (journey) => ({
-            sinkId: "capture",
-            journeyId: journey.traceId,
-            wideEvent: {
-              schemaVersion: "1",
-              event: "auth.journey",
-              traceId: journey.traceId,
-              spanId: journey.root.spanId,
-              kind: journey.kind,
-              outcome: journey.outcome,
-              provider: journey.provider,
-              tenant: journey.tenant,
-              startedAt: new Date(journey.startedAt).toISOString(),
-              durationMs: journey.endedAt - journey.startedAt,
-              attributes: journey.root.attributes,
-              steps: [],
-              correlationCounts: { exact: 0, inferred: 0 },
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const first = yield* createSQLiteStore({
+            path,
+            quietMs: 1000,
+            autoStart: false,
+          });
+          yield* first.buffer.append(TRACE, {
+            kind: "span",
+            id: "span:1111111111111111",
+            atMs: NOW,
+            span: {
+              ...span(TRACE, "1111111111111111", "auth.app.login_start", NOW),
+              attributes: { "auth.tenant": "acme" },
             },
-          }),
-          write: async (batch) => {
-            if (batch.wideEvent !== undefined) {
-              captured.push({ outcome: batch.wideEvent.outcome });
-            }
-          },
-        },
-      ],
-      quietMs: 1000,
-      clock: { now: () => NOW },
-    });
+          });
+          yield* first.buffer.append(TRACE, {
+            kind: "span",
+            id: "span:2222222222222222",
+            atMs: NOW + 100,
+            span: {
+              ...span(
+                TRACE,
+                "2222222222222222",
+                "auth.app.callback",
+                NOW + 100,
+                "ok",
+              ),
+              attributes: { "auth.tenant": "acme" },
+            },
+          });
+        }),
+      );
 
-    await secondStitcher.runDue(NOW + 5000);
-    secondStitcher.flush();
-    second.close();
+      const captured: Array<{ outcome: string }> = [];
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const second = yield* createSQLiteStore({
+            path,
+            quietMs: 1000,
+            autoStart: false,
+          });
+          yield* Effect.gen(function* () {
+            const stitcher = yield* Stitcher;
+            yield* stitcher.runDue(NOW + 5000);
+            yield* stitcher.flush;
+          }).pipe(
+            Effect.provide(
+              stitcherOn(second.buffer, second.scheduler, [
+                {
+                  id: "capture",
+                  accepts: ["journey"],
+                  sampling: { keep: ["all"], successRate: 1 },
+                  render: (journey) => ({
+                    sinkId: "capture",
+                    journeyId: journey.traceId,
+                    wideEvent: {
+                      schemaVersion: "1",
+                      event: "auth.journey",
+                      traceId: journey.traceId,
+                      spanId: journey.root.spanId,
+                      kind: journey.kind,
+                      outcome: journey.outcome,
+                      provider: journey.provider,
+                      tenant: journey.tenant,
+                      startedAt: new Date(journey.startedAt).toISOString(),
+                      durationMs: journey.endedAt - journey.startedAt,
+                      attributes: journey.root.attributes,
+                      steps: [],
+                      correlationCounts: { exact: 0, inferred: 0 },
+                    },
+                  }),
+                  write: (batch) =>
+                    Effect.sync(() => {
+                      if (batch.wideEvent !== undefined) {
+                        captured.push({ outcome: batch.wideEvent.outcome });
+                      }
+                    }),
+                },
+              ]),
+            ),
+          );
+        }),
+      );
 
-    expect(captured).toEqual([{ outcome: "success" }]);
-  });
+      expect(captured).toEqual([{ outcome: "success" }]);
+    }),
+  );
 
-  it("refuses to append to another tenant's trace", async () => {
-    const store = createSQLiteStore({
-      path: join(dir(), "state.db"),
-      autoStart: false,
-    });
+  it.effect("refuses to append to another tenant's trace", () =>
+    Effect.gen(function* () {
+      const store = yield* createSQLiteStore({
+        path: join(dir(), "state.db"),
+        autoStart: false,
+      });
 
-    await store.buffer.append(TRACE, {
-      kind: "span",
-      id: "span:1111111111111111",
-      atMs: NOW,
-      span: {
-        ...span(TRACE, "1111111111111111", "auth.app.login_start", NOW),
-        attributes: { "auth.tenant": "acme" },
-      },
-    });
-
-    await expect(
-      store.buffer.append(TRACE, {
+      yield* store.buffer.append(TRACE, {
         kind: "span",
-        id: "span:2222222222222222",
-        atMs: NOW + 1,
+        id: "span:1111111111111111",
+        atMs: NOW,
         span: {
-          ...span(TRACE, "2222222222222222", "auth.app.callback", NOW + 1),
-          attributes: { "auth.tenant": "globex" },
+          ...span(TRACE, "1111111111111111", "auth.app.login_start", NOW),
+          attributes: { "auth.tenant": "acme" },
         },
-      }),
-    ).rejects.toThrow("another tenant");
+      });
 
-    store.close();
-  });
+      const error = yield* store.buffer
+        .append(TRACE, {
+          kind: "span",
+          id: "span:2222222222222222",
+          atMs: NOW + 1,
+          span: {
+            ...span(TRACE, "2222222222222222", "auth.app.callback", NOW + 1),
+            attributes: { "auth.tenant": "globex" },
+          },
+        })
+        .pipe(Effect.flip);
+      expect(String(error.cause)).toContain("another tenant");
+    }),
+  );
 });

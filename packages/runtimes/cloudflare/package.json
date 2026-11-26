@@ -18,9 +18,11 @@
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
     "@auththread/schema": "workspace:*",
-    "@auththread/stitcher": "workspace:*"
+    "@auththread/stitcher": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

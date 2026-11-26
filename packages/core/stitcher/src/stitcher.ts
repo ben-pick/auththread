@@ -1,11 +1,16 @@
-import type {
+import {
   JourneyBuffer,
-  ProviderAdapter,
+  type JourneyBufferService,
+  type ProviderAdapter,
   Scheduler,
-  SettingsStore,
-  Sink,
-  SinkBatch,
-  TenantSettings,
+  type SchedulerService,
+  type SettingsError,
+  type SettingsStore,
+  SettingsStore as SettingsStoreTag,
+  type Sink,
+  type SinkBatch,
+  type StorageError,
+  type TenantSettings,
 } from "@auththread/adapter-kit";
 import {
   type Attributes,
@@ -22,23 +27,26 @@ import {
   type TraceId,
 } from "@auththread/schema";
 import {
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  Ref,
+  Schema,
+  type Scope,
+  Semaphore,
+} from "effect";
+import { BadRequest, NotFound, Unauthorized } from "./errors.ts";
+import {
   decodeCompactSpans,
   decodeOtlpSpans,
-  decodeProviderEvent,
-} from "./decode.ts";
-import { BadRequest, NotFound, Unauthorized } from "./errors.ts";
-
-export interface Clock {
-  now(): number;
-}
+  decodeProviderEventBatch,
+} from "./wire.ts";
 
 export interface StitcherOptions {
   readonly providers: readonly ProviderAdapter<unknown>[];
-  readonly buffer: JourneyBuffer;
-  readonly scheduler: Scheduler;
-  readonly settings: SettingsStore;
   readonly sinks: readonly Sink[];
-  readonly clock?: Clock;
   /** A journey finalises this long after its last item. Default 10 minutes. */
   readonly quietMs?: number;
   /** How far apart a hint match may be. Default 2 minutes. */
@@ -49,7 +57,11 @@ export interface StitcherOptions {
   readonly maxItemsPerTrace?: number;
   /** Keep emitted batches in memory so tests and the demo can read them. */
   readonly captureBatches?: boolean;
-  readonly onError?: (error: unknown) => void;
+  readonly onError?: (error: unknown) => Effect.Effect<void>;
+  /** How often sinks flush their own buffer. Default 60 seconds. */
+  readonly flushIntervalMs?: number;
+  /** Test seam. Production reads the Effect `Clock`. */
+  readonly now?: Effect.Effect<number>;
 }
 
 export interface StitcherStats {
@@ -59,17 +71,6 @@ export interface StitcherStats {
   readonly rejected: number;
 }
 
-export interface Stitcher {
-  fetch(request: Request): Promise<Response>;
-  ingestSpan(span: Span, tenant?: TenantSettings): Promise<void>;
-  ingestEvent(event: ProviderEvent, tenant?: TenantSettings): Promise<void>;
-  runDue(nowMs: number): Promise<void>;
-  /** Finalise every in-flight journey now, used on graceful shutdown. */
-  drain(): Promise<void>;
-  flush(): SinkBatch[];
-  stats(): StitcherStats;
-}
-
 interface PendingEvent {
   readonly event: ProviderEvent;
   readonly atMs: number;
@@ -77,9 +78,51 @@ interface PendingEvent {
   readonly bytes: number;
 }
 
+interface State {
+  readonly pending: readonly PendingEvent[];
+  readonly pendingBytes: number;
+  readonly deadlines: ReadonlyMap<TraceId, number>;
+  readonly counts: ReadonlyMap<TraceId, number>;
+  readonly owners: ReadonlyMap<TraceId, string>;
+  readonly finalising: ReadonlySet<TraceId>;
+  readonly emitted: readonly SinkBatch[];
+  readonly finalised: number;
+  readonly unmatched: number;
+  readonly writeErrors: number;
+  readonly rejected: number;
+}
+
+const initialState: State = {
+  pending: [],
+  pendingBytes: 0,
+  deadlines: new Map(),
+  counts: new Map(),
+  owners: new Map(),
+  finalising: new Set(),
+  emitted: [],
+  finalised: 0,
+  unmatched: 0,
+  writeErrors: 0,
+  rejected: 0,
+};
+
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_PENDING = 200;
 const MAX_PENDING_BYTES = 1024 * 1024;
+
+const CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers":
+    "authorization, content-type, x-auththread-key",
+  "access-control-max-age": "86400",
+};
+
+const json = (body: unknown, status = 200): Response =>
+  Response.json(body, {
+    status,
+    headers: { ...CORS, "cache-control": "no-store" },
+  });
 
 const hintsOf = (
   attributes: Attributes,
@@ -116,35 +159,6 @@ const matching = (
   event.hints.userHash === hints.userHash &&
   Math.abs(event.atMs - atMs) <= windowMs;
 
-const json = (body: unknown, status = 200): Response =>
-  Response.json(body, {
-    status,
-    headers: {
-      "access-control-allow-origin": "*",
-      "cache-control": "no-store",
-    },
-  });
-
-const CORS: Record<string, string> = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "POST, OPTIONS",
-  "access-control-allow-headers":
-    "authorization, content-type, x-auththread-key",
-  "access-control-max-age": "86400",
-};
-
-async function readJson(request: Request): Promise<unknown> {
-  const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > MAX_BODY_BYTES) throw new BadRequest("payload too large");
-  const body = await request.text();
-  if (body.length > MAX_BODY_BYTES) throw new BadRequest("payload too large");
-  try {
-    return JSON.parse(body) as unknown;
-  } catch {
-    throw new BadRequest("body is not valid JSON");
-  }
-}
-
 const bearer = (request: Request): string | null => {
   const header = request.headers.get("authorization");
   if (header?.toLowerCase().startsWith("bearer ")) {
@@ -155,369 +169,580 @@ const bearer = (request: Request): string | null => {
   return fallback !== undefined && fallback.length > 0 ? fallback : null;
 };
 
-export function createStitcher(options: StitcherOptions): Stitcher {
-  const clock = options.clock ?? { now: () => Date.now() };
-  const quietMs = options.quietMs ?? 10 * 60 * 1000;
-  const correlationWindowMs = options.correlationWindowMs ?? 2 * 60 * 1000;
-  const ttlMs = options.ttlMs ?? 2 * 60 * 60 * 1000;
-  const maxItems = options.maxItemsPerTrace ?? 500;
+const readJson = (request: Request): Effect.Effect<unknown, BadRequest> =>
+  Effect.gen(function* () {
+    const declared = Number(request.headers.get("content-length") ?? "0");
+    if (declared > MAX_BODY_BYTES)
+      return yield* new BadRequest({ message: "payload too large" });
 
-  const providers = new Map(
-    options.providers.map((provider) => [provider.id, provider]),
-  );
-  const emitted: SinkBatch[] = [];
-  const pending: PendingEvent[] = [];
-  const deadlines = new Map<TraceId, number>();
-  const counts = new Map<TraceId, number>();
-  const owners = new Map<TraceId, string>();
-  const finalising = new Set<TraceId>();
-  let pendingBytes = 0;
-  let overrideNow: number | null = null;
-  let finalised = 0;
-  let unmatchedDrops = 0;
-  let writeErrors = 0;
-  let rejected = 0;
-
-  options.scheduler.onDue(async (traceId) => {
-    await finalise(traceId, overrideNow ?? clock.now());
-  });
-
-  const redactEvent = (
-    event: ProviderEvent,
-    tenant?: TenantSettings,
-  ): ProviderEvent => ({
-    ...event,
-    attributes: redactAttributes(event.attributes, {
-      ...(tenant === undefined ? {} : { salt: tenant.salt }),
-    }),
-  });
-
-  /**
-   * A trace ID can leak through a URL, a provider log or a referrer. Once a
-   * tenant owns a trace, another tenant cannot append to it.
-   */
-  function assertOwner(
-    traceId: TraceId,
-    tenant: TenantSettings | undefined,
-  ): void {
-    if (tenant === undefined) return;
-    const existing = owners.get(traceId);
-    if (existing !== undefined && existing !== tenant.tenant) {
-      rejected += 1;
-      throw new Unauthorized("trace belongs to another tenant");
-    }
-    owners.set(traceId, tenant.tenant);
-  }
-
-  /**
-   * Deadlines only move forward, and never sit in the past. A late span stamped
-   * eleven minutes ago must wait a full quiet period from arrival.
-   */
-  async function scheduleFinalise(
-    traceId: TraceId,
-    endMs: number,
-  ): Promise<void> {
-    const now = clock.now();
-    const bounded = Math.min(Math.max(now, endMs), now + ttlMs);
-    const at = Math.max(deadlines.get(traceId) ?? 0, bounded + quietMs);
-    deadlines.set(traceId, at);
-    await options.scheduler.schedule(traceId, at);
-  }
-
-  function takeSlot(traceId: TraceId): boolean {
-    const count = counts.get(traceId) ?? 0;
-    if (count >= maxItems) {
-      rejected += 1;
-      return false;
-    }
-    counts.set(traceId, count + 1);
-    return true;
-  }
-
-  async function appendEvent(
-    traceId: TraceId,
-    event: ProviderEvent,
-    exact = false,
-  ): Promise<void> {
-    if (!takeSlot(traceId)) return;
-    const stored = exact ? { ...event, traceId } : event;
-    await options.buffer.append(traceId, {
-      kind: "event",
-      id: `event:${event.id}`,
-      atMs: event.atMs,
-      event: stored,
+    const text = yield* Effect.tryPromise({
+      try: () => request.text(),
+      catch: () => new BadRequest({ message: "could not read the body" }),
     });
-    await scheduleFinalise(traceId, event.atMs);
+    if (text.length > MAX_BODY_BYTES)
+      return yield* new BadRequest({ message: "payload too large" });
+
+    return yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(Schema.Unknown),
+    )(text).pipe(
+      Effect.mapError(
+        () => new BadRequest({ message: "body is not valid JSON" }),
+      ),
+    );
+  });
+
+const reportError = (
+  onError: StitcherOptions["onError"],
+  error: unknown,
+): Effect.Effect<void> =>
+  onError === undefined ? Effect.logError(error) : onError(error);
+
+const redactEvent = (
+  event: ProviderEvent,
+  tenant?: TenantSettings,
+): ProviderEvent => ({
+  ...event,
+  attributes: redactAttributes(event.attributes, {
+    ...(tenant === undefined ? {} : { salt: tenant.salt }),
+  }),
+});
+
+const stringValue = (value: unknown, fallback: string): string =>
+  typeof value === "string" ? value : fallback;
+
+export class Stitcher extends Context.Service<
+  Stitcher,
+  {
+    ingestSpan(
+      span: Span,
+      tenant?: TenantSettings,
+    ): Effect.Effect<void, Unauthorized>;
+    ingestEvent(
+      event: ProviderEvent,
+      tenant?: TenantSettings,
+    ): Effect.Effect<void, Unauthorized>;
+    runDue(nowMs: number): Effect.Effect<void>;
+    /** Finalise every in-flight journey now, used on graceful shutdown. */
+    drain: Effect.Effect<void>;
+    flush: Effect.Effect<SinkBatch[]>;
+    stats: Effect.Effect<StitcherStats>;
+    handle(request: Request): Effect.Effect<Response>;
   }
+>()("auththread/Stitcher") {}
 
-  function park(entry: PendingEvent): void {
-    pending.push(entry);
-    pendingBytes += entry.bytes;
+export type StitcherService = Stitcher["Service"];
 
-    while (
-      pending.length > MAX_PENDING ||
-      (pendingBytes > MAX_PENDING_BYTES && pending.length > 1)
-    ) {
-      const dropped = pending.shift();
-      pendingBytes -= dropped?.bytes ?? 0;
-      unmatchedDrops += 1;
-    }
-  }
+const makeStitcher = (
+  options: StitcherOptions,
+  buffer: JourneyBufferService,
+  scheduler: SchedulerService,
+  settings: SettingsStore["Service"],
+): Effect.Effect<StitcherService, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const quietMs = options.quietMs ?? 10 * 60 * 1000;
+    const correlationWindowMs = options.correlationWindowMs ?? 2 * 60 * 1000;
+    const ttlMs = options.ttlMs ?? 2 * 60 * 60 * 1000;
+    const maxItems = options.maxItemsPerTrace ?? 500;
 
-  async function adoptPending(
-    traceId: TraceId,
-    hints: CorrelationHints,
-    atMs: number,
-  ): Promise<void> {
-    for (let index = pending.length - 1; index >= 0; index--) {
-      const entry = pending[index];
-      if (entry === undefined) continue;
+    const providers = new Map(
+      options.providers.map((provider) => [provider.id, provider]),
+    );
+    const state = yield* Ref.make(initialState);
+    const lock = yield* Semaphore.make(1);
+    const currentNow = (): Effect.Effect<number> =>
+      options.now ?? Clock.currentTimeMillis;
 
-      const exact =
-        entry.event.tenant === hints.tenant &&
-        entry.event.hints.transactionId !== undefined &&
-        entry.event.hints.transactionId === hints.transactionId &&
-        Math.abs(entry.event.atMs - atMs) <= correlationWindowMs;
-      if (!exact && !matching(entry.event, hints, correlationWindowMs, atMs)) {
-        continue;
-      }
+    const modify = <A>(f: (current: State) => readonly [A, State]) =>
+      Ref.modify(state, f);
 
-      pending.splice(index, 1);
-      pendingBytes -= entry.bytes;
-      await appendEvent(traceId, entry.event, exact);
-    }
-  }
-
-  async function finalise(traceId: TraceId, nowMs: number): Promise<void> {
-    if (finalising.has(traceId)) return;
-    finalising.add(traceId);
-
-    try {
-      const items = await options.buffer.read(traceId);
-      const spans = items
-        .filter((item) => item.kind === "span")
-        .map((item) => item.span);
-      if (spans.length === 0) {
-        await options.buffer.delete(traceId);
-        deadlines.delete(traceId);
-        counts.delete(traceId);
-        owners.delete(traceId);
-        return;
-      }
-
-      const latest = items.reduce((max, item) => Math.max(max, item.atMs), 0);
-      if (nowMs < latest + quietMs) {
-        await scheduleFinalise(traceId, latest);
-        return;
-      }
-
-      const events = items
-        .filter((item) => item.kind === "event")
-        .map((item) => item.event);
-      const first = sortSpans(spans)[0] as Span;
-      const firstString = (value: unknown, fallback: string): string =>
-        typeof value === "string" ? value : fallback;
-      const provider = firstString(
-        first.attributes["auth.provider"],
-        events[0]?.provider ?? "unknown",
-      );
-      const tenant = firstString(
-        first.attributes["auth.tenant"],
-        events[0]?.tenant ?? "unknown",
-      );
-
-      const journey: Journey = buildJourney({
-        traceId: first.traceId,
-        provider,
-        tenant,
-        spans: spans.map((span) => redactSpan(span, {})),
-        events: events.map((event) => redactEvent(event)),
+    const assertOwner = (
+      traceId: TraceId,
+      tenant: TenantSettings | undefined,
+    ): Effect.Effect<void, Unauthorized> =>
+      Effect.gen(function* () {
+        if (tenant === undefined) return;
+        const existing = yield* modify((current) => {
+          const owner = current.owners.get(traceId);
+          if (owner !== undefined && owner !== tenant.tenant) {
+            return [
+              false,
+              { ...current, rejected: current.rejected + 1 },
+            ] as const;
+          }
+          const owners = new Map(current.owners);
+          owners.set(traceId, tenant.tenant);
+          return [true, { ...current, owners }] as const;
+        });
+        if (!existing)
+          return yield* new Unauthorized({
+            message: "trace belongs to another tenant",
+          });
       });
 
-      for (const sink of options.sinks) {
-        try {
-          const batch = sink.render(journey);
-          if (batch === null) continue;
-          await sink.write(batch);
-          if (options.captureBatches === true) emitted.push(batch);
-        } catch (error) {
-          writeErrors += 1;
-          options.onError?.(error);
+    const takeSlot = (traceId: TraceId): Effect.Effect<boolean> =>
+      modify((current) => {
+        const count = current.counts.get(traceId) ?? 0;
+        if (count >= maxItems) {
+          return [
+            false,
+            { ...current, rejected: current.rejected + 1 },
+          ] as const;
         }
-      }
+        const counts = new Map(current.counts);
+        counts.set(traceId, count + 1);
+        return [true, { ...current, counts }] as const;
+      });
 
-      const seen = new Set(items.map((item) => item.id));
-      const appended = (await options.buffer.read(traceId)).filter(
-        (item) => !seen.has(item.id),
-      );
-      if (appended.length > 0) {
-        const newest = appended.reduce(
-          (max, item) => Math.max(max, item.atMs),
-          0,
+    const scheduleFinalise = (
+      traceId: TraceId,
+      endMs: number,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const nowMs = yield* currentNow();
+        const bounded = Math.min(Math.max(nowMs, endMs), nowMs + ttlMs);
+        const current = yield* Ref.get(state);
+        const at = Math.max(
+          current.deadlines.get(traceId) ?? 0,
+          bounded + quietMs,
         );
-        await scheduleFinalise(traceId, newest);
-        return;
-      }
-
-      await options.buffer.delete(traceId);
-      deadlines.delete(traceId);
-      counts.delete(traceId);
-      owners.delete(traceId);
-      finalised += 1;
-    } finally {
-      finalising.delete(traceId);
-    }
-  }
-
-  const stitcher: Stitcher = {
-    async ingestSpan(span, tenant) {
-      const stamped: Span = {
-        ...span,
-        attributes:
-          tenant === undefined
-            ? span.attributes
-            : {
-                ...span.attributes,
-                "auth.provider": tenant.provider,
-                "auth.tenant": tenant.tenant,
-              },
-      };
-      const clean = redactSpan(stamped, {
-        ...(tenant === undefined ? {} : { salt: tenant.salt }),
-      });
-      assertOwner(span.traceId, tenant);
-      if (!takeSlot(span.traceId)) return;
-
-      const hints = hintsOf(clean.attributes, tenant?.salt, tenant?.tenant);
-
-      await options.buffer.append(span.traceId, {
-        kind: "span",
-        id: `span:${span.spanId}`,
-        atMs: span.startMs,
-        span: clean,
-      });
-      await options.buffer.indexHints(span.traceId, hints, span.startMs);
-      await adoptPending(span.traceId, hints, span.startMs);
-      await scheduleFinalise(span.traceId, span.startMs + span.durationMs);
-    },
-
-    async ingestEvent(event, tenant) {
-      const adapter = providers.get(event.provider);
-      const classified = adapter?.classify(event);
-      const verdict: ProviderEvent = {
-        ...event,
-        provider: tenant?.provider ?? event.provider,
-        tenant: tenant?.tenant ?? event.tenant,
-        attributes: {
-          ...event.attributes,
-          ...(tenant === undefined
-            ? {}
-            : {
-                "auth.provider": tenant.provider,
-                "auth.tenant": tenant.tenant,
-              }),
-          ...(classified?.outcome === undefined
-            ? {}
-            : { "auth.outcome": classified.outcome }),
-          ...(classified?.errorCode === undefined
-            ? {}
-            : { "auth.error.code": classified.errorCode }),
-        },
-      };
-      const withHints: ProviderEvent = {
-        ...verdict,
-        hints: {
-          ...verdict.hints,
-          ...hintsOf(
-            verdict.attributes,
-            tenant?.salt,
-            tenant?.tenant ?? verdict.tenant,
+        yield* modify((currentState) => {
+          const deadlines = new Map(currentState.deadlines);
+          deadlines.set(traceId, at);
+          return [undefined, { ...currentState, deadlines }] as const;
+        });
+        yield* scheduler.schedule(traceId, at).pipe(
+          Effect.catchCause((error) =>
+            Effect.andThen(
+              modify(
+                (currentState) =>
+                  [
+                    undefined,
+                    {
+                      ...currentState,
+                      writeErrors: currentState.writeErrors + 1,
+                    },
+                  ] as const,
+              ),
+              reportError(options.onError, error),
+            ),
           ),
-        },
-      };
-      const clean = redactEvent(withHints, tenant);
-
-      if (clean.traceId !== undefined) {
-        assertOwner(clean.traceId, tenant);
-        await appendEvent(clean.traceId, clean);
-        return;
-      }
-
-      if (clean.hints.transactionId !== undefined) {
-        const exact = await options.buffer.findByTransaction(
-          clean.tenant,
-          clean.hints.transactionId,
-          correlationWindowMs,
-          clean.atMs,
         );
-        if (exact !== null) {
-          assertOwner(exact, tenant);
-          await appendEvent(exact, clean, true);
-          return;
-        }
-      }
-
-      const userHash = clean.hints.userHash;
-      if (userHash !== undefined) {
-        const candidates = await options.buffer.findCandidates(
-          { tenant: clean.tenant, userHash },
-          correlationWindowMs,
-          clean.atMs,
-        );
-        const best = candidates[0];
-        if (best !== undefined) {
-          assertOwner(best, tenant);
-          await appendEvent(best, clean);
-          return;
-        }
-      }
-
-      park({
-        event: clean,
-        atMs: clean.atMs,
-        tenant: clean.tenant,
-        bytes: JSON.stringify(clean).length,
       });
-    },
 
-    async runDue(nowMs) {
-      overrideNow = nowMs;
-      try {
-        await options.scheduler.runDue(nowMs);
-      } finally {
-        overrideNow = null;
-      }
+    const cleanupTrace = (traceId: TraceId): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* modify((current) => {
+          const deadlines = new Map(current.deadlines);
+          const counts = new Map(current.counts);
+          const owners = new Map(current.owners);
+          deadlines.delete(traceId);
+          counts.delete(traceId);
+          owners.delete(traceId);
+          return [
+            undefined,
+            { ...current, deadlines, counts, owners },
+          ] as const;
+        });
+        yield* buffer
+          .delete(traceId)
+          .pipe(
+            Effect.catchCause((error) => reportError(options.onError, error)),
+          );
+      });
 
-      for (let index = pending.length - 1; index >= 0; index--) {
-        const entry = pending[index];
-        if (entry === undefined) continue;
-        if (nowMs - entry.atMs > ttlMs) {
-          pending.splice(index, 1);
-          pendingBytes -= entry.bytes;
-          unmatchedDrops += 1;
+    const appendEvent = (
+      traceId: TraceId,
+      event: ProviderEvent,
+      exact = false,
+    ): Effect.Effect<void, Unauthorized | StorageError> =>
+      Effect.gen(function* () {
+        if (!(yield* takeSlot(traceId))) return;
+        const stored = exact ? { ...event, traceId } : event;
+        yield* buffer.append(traceId, {
+          kind: "event",
+          id: `event:${event.id}`,
+          atMs: event.atMs,
+          event: stored,
+        });
+        yield* scheduleFinalise(traceId, event.atMs);
+      });
+
+    const park = (entry: PendingEvent): Effect.Effect<void> =>
+      modify((current) => {
+        const pending = [...current.pending, entry];
+        let pendingBytes = current.pendingBytes + entry.bytes;
+        let unmatched = current.unmatched;
+        while (
+          pending.length > MAX_PENDING ||
+          (pendingBytes > MAX_PENDING_BYTES && pending.length > 1)
+        ) {
+          const dropped = pending.shift();
+          pendingBytes -= dropped?.bytes ?? 0;
+          unmatched += 1;
         }
-      }
+        return [
+          undefined,
+          { ...current, pending, pendingBytes, unmatched },
+        ] as const;
+      });
 
-      await options.buffer.prune(nowMs - ttlMs);
-      for (const [traceId, at] of deadlines) {
-        if (at < nowMs - ttlMs) deadlines.delete(traceId);
-      }
-    },
+    const adoptPending = (
+      traceId: TraceId,
+      hints: CorrelationHints,
+      atMs: number,
+    ): Effect.Effect<void, Unauthorized | StorageError> =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(state);
+        const remaining: PendingEvent[] = [];
+        let pendingBytes = current.pendingBytes;
 
-    flush() {
-      return emitted.splice(0, emitted.length);
-    },
+        for (const entry of current.pending) {
+          const exact =
+            entry.event.tenant === hints.tenant &&
+            entry.event.hints.transactionId !== undefined &&
+            entry.event.hints.transactionId === hints.transactionId &&
+            Math.abs(entry.event.atMs - atMs) <= correlationWindowMs;
+          if (
+            !exact &&
+            !matching(entry.event, hints, correlationWindowMs, atMs)
+          ) {
+            remaining.push(entry);
+            continue;
+          }
+          pendingBytes -= entry.bytes;
+          yield* appendEvent(traceId, entry.event, exact);
+        }
 
-    async drain() {
-      await stitcher.runDue(Number.MAX_SAFE_INTEGER);
-    },
+        yield* modify(
+          (stateNow) =>
+            [
+              undefined,
+              {
+                ...stateNow,
+                pending: remaining,
+                pendingBytes,
+              },
+            ] as const,
+        );
+      });
 
-    stats() {
-      return { finalised, unmatched: unmatchedDrops, writeErrors, rejected };
-    },
+    const finalise = (traceId: TraceId, nowMs: number): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(state);
+        if (current.finalising.has(traceId)) return;
 
-    async fetch(request) {
-      try {
+        const finalising = new Set(current.finalising);
+        finalising.add(traceId);
+        yield* modify(
+          (stateNow) => [undefined, { ...stateNow, finalising }] as const,
+        );
+
+        yield* Effect.gen(function* () {
+          const items = yield* buffer.read(traceId);
+          const spans = items
+            .filter((item) => item.kind === "span")
+            .map((item) => item.span);
+          if (spans.length === 0) {
+            yield* cleanupTrace(traceId);
+            return;
+          }
+
+          const latest = items.reduce(
+            (max, item) => Math.max(max, item.atMs),
+            0,
+          );
+          if (nowMs < latest + quietMs) {
+            yield* scheduleFinalise(traceId, latest);
+            return;
+          }
+
+          const events = items
+            .filter((item) => item.kind === "event")
+            .map((item) => item.event);
+          const first = sortSpans(spans)[0] as Span;
+          const provider = stringValue(
+            first.attributes["auth.provider"],
+            events[0]?.provider ?? "unknown",
+          );
+          const tenant = stringValue(
+            first.attributes["auth.tenant"],
+            events[0]?.tenant ?? "unknown",
+          );
+
+          const journey: Journey = buildJourney({
+            traceId: first.traceId,
+            provider,
+            tenant,
+            spans: spans.map((span) => redactSpan(span, {})),
+            events: events.map((event) => redactEvent(event)),
+          });
+
+          const captured: SinkBatch[] = [];
+          for (const sink of options.sinks) {
+            const batch = sink.render(journey);
+            if (batch === null) continue;
+            const written = yield* sink.write(batch).pipe(
+              Effect.as(true),
+              Effect.catchCause((error) =>
+                Effect.andThen(
+                  modify(
+                    (stateNow) =>
+                      [
+                        undefined,
+                        {
+                          ...stateNow,
+                          writeErrors: stateNow.writeErrors + 1,
+                        },
+                      ] as const,
+                  ),
+                  Effect.andThen(
+                    reportError(options.onError, error),
+                    Effect.succeed(false),
+                  ),
+                ),
+              ),
+            );
+            if (written) captured.push(batch);
+          }
+
+          if (options.captureBatches === true && captured.length > 0) {
+            yield* modify(
+              (stateNow) =>
+                [
+                  undefined,
+                  { ...stateNow, emitted: [...stateNow.emitted, ...captured] },
+                ] as const,
+            );
+          }
+
+          const seen = new Set(items.map((item) => item.id));
+          const appended = (yield* buffer.read(traceId)).filter(
+            (item) => !seen.has(item.id),
+          );
+          if (appended.length > 0) {
+            const newest = appended.reduce(
+              (max, item) => Math.max(max, item.atMs),
+              0,
+            );
+            yield* scheduleFinalise(traceId, newest);
+            return;
+          }
+
+          yield* cleanupTrace(traceId);
+          yield* modify(
+            (stateNow) =>
+              [
+                undefined,
+                { ...stateNow, finalised: stateNow.finalised + 1 },
+              ] as const,
+          );
+        }).pipe(
+          Effect.catchCause((error) => reportError(options.onError, error)),
+          Effect.ensuring(
+            modify((stateNow) => {
+              const next = new Set(stateNow.finalising);
+              next.delete(traceId);
+              return [undefined, { ...stateNow, finalising: next }] as const;
+            }),
+          ),
+        );
+      });
+
+    const withLock = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+      lock.withPermit(effect);
+
+    const ingestSpan = (
+      span: Span,
+      tenant?: TenantSettings,
+    ): Effect.Effect<void, Unauthorized> =>
+      withLock(
+        Effect.gen(function* () {
+          const stamped: Span = {
+            ...span,
+            attributes:
+              tenant === undefined
+                ? span.attributes
+                : {
+                    ...span.attributes,
+                    "auth.provider": tenant.provider,
+                    "auth.tenant": tenant.tenant,
+                  },
+          };
+          const clean = redactSpan(stamped, {
+            ...(tenant === undefined ? {} : { salt: tenant.salt }),
+          });
+          yield* assertOwner(span.traceId, tenant);
+          if (!(yield* takeSlot(span.traceId))) return;
+
+          const hints = hintsOf(clean.attributes, tenant?.salt, tenant?.tenant);
+
+          yield* buffer.append(span.traceId, {
+            kind: "span",
+            id: `span:${span.spanId}`,
+            atMs: span.startMs,
+            span: clean,
+          });
+          yield* buffer.indexHints(span.traceId, hints, span.startMs);
+          yield* adoptPending(span.traceId, hints, span.startMs);
+          yield* scheduleFinalise(span.traceId, span.startMs + span.durationMs);
+        }).pipe(
+          Effect.catchTag("StorageError", (error) =>
+            reportError(options.onError, error),
+          ),
+        ),
+      );
+
+    const ingestEvent = (
+      event: ProviderEvent,
+      tenant?: TenantSettings,
+    ): Effect.Effect<void, Unauthorized> =>
+      withLock(
+        Effect.gen(function* () {
+          const adapter = providers.get(event.provider);
+          const classified = adapter?.classify(event);
+          const verdict: ProviderEvent = {
+            ...event,
+            provider: tenant?.provider ?? event.provider,
+            tenant: tenant?.tenant ?? event.tenant,
+            attributes: {
+              ...event.attributes,
+              ...(tenant === undefined
+                ? {}
+                : {
+                    "auth.provider": tenant.provider,
+                    "auth.tenant": tenant.tenant,
+                  }),
+              ...(classified?.outcome === undefined
+                ? {}
+                : { "auth.outcome": classified.outcome }),
+              ...(classified?.errorCode === undefined
+                ? {}
+                : { "auth.error.code": classified.errorCode }),
+            },
+          };
+          const withHints: ProviderEvent = {
+            ...verdict,
+            hints: {
+              ...verdict.hints,
+              ...hintsOf(
+                verdict.attributes,
+                tenant?.salt,
+                tenant?.tenant ?? verdict.tenant,
+              ),
+            },
+          };
+          const clean = redactEvent(withHints, tenant);
+
+          if (clean.traceId !== undefined) {
+            yield* assertOwner(clean.traceId, tenant);
+            yield* appendEvent(clean.traceId, clean);
+            return;
+          }
+
+          if (clean.hints.transactionId !== undefined) {
+            const exact = yield* buffer.findByTransaction(
+              clean.tenant,
+              clean.hints.transactionId,
+              correlationWindowMs,
+              clean.atMs,
+            );
+            if (exact !== null) {
+              yield* assertOwner(exact, tenant);
+              yield* appendEvent(exact, clean, true);
+              return;
+            }
+          }
+
+          const userHash = clean.hints.userHash;
+          if (userHash !== undefined) {
+            const candidates = yield* buffer.findCandidates(
+              { tenant: clean.tenant, userHash },
+              correlationWindowMs,
+              clean.atMs,
+            );
+            const best = candidates[0];
+            if (best !== undefined) {
+              yield* assertOwner(best, tenant);
+              yield* appendEvent(best, clean);
+              return;
+            }
+          }
+
+          yield* park({
+            event: clean,
+            atMs: clean.atMs,
+            tenant: clean.tenant,
+            bytes: JSON.stringify(clean).length,
+          });
+        }).pipe(
+          Effect.catchTag("StorageError", (error) =>
+            reportError(options.onError, error),
+          ),
+        ),
+      );
+
+    const runDue = (nowMs: number): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* scheduler
+          .runDue(nowMs)
+          .pipe(
+            Effect.catchCause((error) => reportError(options.onError, error)),
+          );
+
+        yield* modify((current) => {
+          let pendingBytes = current.pendingBytes;
+          let unmatched = current.unmatched;
+          const pending = current.pending.filter((entry) => {
+            if (nowMs - entry.atMs > ttlMs) {
+              pendingBytes -= entry.bytes;
+              unmatched += 1;
+              return false;
+            }
+            return true;
+          });
+          return [
+            undefined,
+            { ...current, pending, pendingBytes, unmatched },
+          ] as const;
+        });
+
+        yield* buffer
+          .prune(nowMs - ttlMs)
+          .pipe(
+            Effect.catchCause((error) => reportError(options.onError, error)),
+          );
+        yield* modify((current) => {
+          const deadlines = new Map(current.deadlines);
+          for (const [traceId, at] of deadlines) {
+            if (at < nowMs - ttlMs) deadlines.delete(traceId);
+          }
+          return [undefined, { ...current, deadlines }] as const;
+        });
+      });
+
+    const requireTenant = (
+      request: Request,
+    ): Effect.Effect<TenantSettings, Unauthorized | SettingsError> =>
+      Effect.gen(function* () {
+        const key = bearer(request);
+        if (key === null)
+          return yield* new Unauthorized({ message: "missing API key" });
+        const tenant = yield* settings.getTenant(sha256Hex(key));
+        if (tenant === null) {
+          yield* modify(
+            (current) =>
+              [
+                undefined,
+                { ...current, rejected: current.rejected + 1 },
+              ] as const,
+          );
+          return yield* new Unauthorized({ message: "unknown API key" });
+        }
+        return tenant;
+      });
+
+    const handle = (request: Request): Effect.Effect<Response> =>
+      Effect.gen(function* () {
         if (request.method === "OPTIONS")
           return new Response(null, { status: 204, headers: CORS });
 
@@ -526,36 +751,27 @@ export function createStitcher(options: StitcherOptions): Stitcher {
         if (request.method !== "POST")
           return json({ error: "method not allowed" }, 405);
 
-        const key = bearer(request);
-        if (key === null) throw new Unauthorized("missing API key");
-        const tenant = await options.settings.getTenant(sha256Hex(key));
-        if (tenant === null) {
-          rejected += 1;
-          throw new Unauthorized("unknown API key");
-        }
+        const tenant = yield* requireTenant(request);
 
         if (url.pathname === "/v1/spans") {
-          const body = await readJson(request);
-          const spans = decodeOtlpSpans(body);
-          for (const span of spans) await stitcher.ingestSpan(span, tenant);
+          const body = yield* readJson(request);
+          const spans = yield* decodeOtlpSpans(body);
+          for (const span of spans) yield* ingestSpan(span, tenant);
           return json({ accepted: spans.length }, 202);
         }
 
         if (url.pathname === "/v1/compact-spans") {
-          const body = await readJson(request);
-          const spans = decodeCompactSpans(body);
-          for (const span of spans) await stitcher.ingestSpan(span, tenant);
+          const body = yield* readJson(request);
+          const spans = yield* decodeCompactSpans(body);
+          for (const span of spans) yield* ingestSpan(span, tenant);
           return json({ accepted: spans.length }, 202);
         }
 
         if (url.pathname === "/v1/events") {
-          const body = await readJson(request);
-          const batch = Array.isArray((body as { events?: unknown }).events)
-            ? ((body as { events: unknown[] }).events ?? [])
-            : [body];
-          for (const entry of batch)
-            await stitcher.ingestEvent(decodeProviderEvent(entry), tenant);
-          return json({ accepted: batch.length }, 202);
+          const body = yield* readJson(request);
+          const events = yield* decodeProviderEventBatch(body);
+          for (const event of events) yield* ingestEvent(event, tenant);
+          return json({ accepted: events.length }, 202);
         }
 
         if (url.pathname.startsWith("/v1/providers/")) {
@@ -564,50 +780,135 @@ export function createStitcher(options: StitcherOptions): Stitcher {
           const providerId = slash === -1 ? rest : rest.slice(0, slash);
           const feedPath = slash === -1 ? "/" : rest.slice(slash);
           const adapter = providers.get(providerId);
-          if (adapter === undefined) throw new NotFound("unknown provider");
+          if (adapter === undefined)
+            return yield* new NotFound({ message: "unknown provider" });
           if (adapter.id !== tenant.provider)
-            throw new Unauthorized("tenant is for another provider");
+            return yield* new Unauthorized({
+              message: "tenant is for another provider",
+            });
           const feed = (adapter.feeds ?? []).find(
             (candidate) => candidate.path === feedPath,
           );
-          if (feed === undefined) throw new NotFound("unknown feed");
+          if (feed === undefined)
+            return yield* new NotFound({ message: "unknown feed" });
 
           const headers: Record<string, string | undefined> = {};
           request.headers.forEach((value, name) => {
             headers[name] = value;
           });
-          const verified = await Promise.resolve(
-            feed.verify({ headers }, tenant.providerSettings),
+          const verified = yield* feed.verify(
+            { headers },
+            tenant.providerSettings,
           );
           if (!verified) {
-            rejected += 1;
-            throw new Unauthorized("feed verification failed");
+            yield* modify(
+              (current) =>
+                [
+                  undefined,
+                  { ...current, rejected: current.rejected + 1 },
+                ] as const,
+            );
+            return yield* new Unauthorized({
+              message: "feed verification failed",
+            });
           }
 
-          const body = await readJson(request);
-          const events = feed.parse(body, {
+          const body = yield* readJson(request);
+          const events = yield* feed.parse(body, {
             hashUser: (value) => hashUser(value, tenant.salt),
           });
-          for (const event of events) await stitcher.ingestEvent(event, tenant);
+          for (const event of events) yield* ingestEvent(event, tenant);
           return json({ accepted: events.length }, 202);
         }
 
-        throw new NotFound("unknown route");
-      } catch (error) {
-        if (error instanceof BadRequest)
-          return json({ error: "bad_request", message: error.message }, 400);
-        if (error instanceof Unauthorized) {
-          return json({ error: "unauthorized", message: error.message }, 401);
-        }
-        if (error instanceof NotFound)
-          return json({ error: "not_found", message: error.message }, 404);
-        options.onError?.(error);
-        return json({ error: "internal" }, 500);
-      }
-    },
-  };
+        return yield* new NotFound({ message: "unknown route" });
+      }).pipe(
+        Effect.catchTags({
+          BadRequest: (error) =>
+            Effect.succeed(
+              json({ error: "bad_request", message: error.message }, 400),
+            ),
+          Unauthorized: (error) =>
+            Effect.succeed(
+              json({ error: "unauthorized", message: error.message }, 401),
+            ),
+          NotFound: (error) =>
+            Effect.succeed(
+              json({ error: "not_found", message: error.message }, 404),
+            ),
+          FeedError: (error) =>
+            Effect.succeed(
+              json({ error: "bad_request", message: error.message }, 400),
+            ),
+        }),
+        Effect.catchCause((error) =>
+          Effect.andThen(
+            reportError(options.onError, error),
+            Effect.succeed(json({ error: "internal" }, 500)),
+          ),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.andThen(
+            reportError(options.onError, cause),
+            Effect.succeed(json({ error: "internal" }, 500)),
+          ),
+        ),
+      );
 
-  return stitcher;
-}
+    const service: StitcherService = {
+      ingestSpan,
+      ingestEvent,
+      runDue,
+      drain: runDue(Number.MAX_SAFE_INTEGER),
+      flush: Ref.modify(state, (current) => [
+        [...current.emitted],
+        { ...current, emitted: [] },
+      ]),
+      stats: Ref.get(state).pipe(
+        Effect.map((current) => ({
+          finalised: current.finalised,
+          unmatched: current.unmatched,
+          writeErrors: current.writeErrors,
+          rejected: current.rejected,
+        })),
+      ),
+      handle,
+    };
 
-export type { Journey };
+    const flushSinks = Effect.forEach(
+      options.sinks,
+      (sink) =>
+        (sink.flush ?? Effect.void).pipe(
+          Effect.catchCause((cause) => reportError(options.onError, cause)),
+        ),
+      { discard: true },
+    );
+
+    yield* scheduler.onDue((traceId, nowMs) =>
+      withLock(finalise(traceId, nowMs)),
+    );
+    yield* Effect.addFinalizer(() => Effect.andThen(service.drain, flushSinks));
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.andThen(
+          Effect.sleep(Duration.millis(options.flushIntervalMs ?? 60_000)),
+          flushSinks,
+        ),
+      ),
+    );
+
+    return service;
+  });
+
+export const stitcherLayer = (
+  options: StitcherOptions,
+): Layer.Layer<Stitcher, never, JourneyBuffer | Scheduler | SettingsStore> =>
+  Layer.effect(
+    Stitcher,
+    Effect.gen(function* () {
+      const buffer = yield* JourneyBuffer;
+      const scheduler = yield* Scheduler;
+      const settings = yield* SettingsStoreTag;
+      return yield* makeStitcher(options, buffer, scheduler, settings);
+    }),
+  );

@@ -1,22 +1,11 @@
 import type { ProviderAdapter } from "@auththread/adapter-kit";
-import type { Outcome, ProviderEvent, TraceId } from "@auththread/schema";
+import type { Outcome, ProviderEvent } from "@auththread/schema";
 
 const OUTCOMES: Record<string, Outcome> = {
   login_success: "success",
   signup_success: "success",
   login_failure: "failed",
   signup_failure: "failed",
-};
-
-export interface BrowserProvider {
-  readonly id: string;
-  authorizeParams(traceId: TraceId): Record<string, string>;
-}
-
-/** Any OIDC client: no extra authorize params, the browser SDK keys the journey on its state. */
-export const oidcBrowser: BrowserProvider = {
-  id: "oidc",
-  authorizeParams: () => ({}),
 };
 
 const classify = (

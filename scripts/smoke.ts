@@ -1,10 +1,11 @@
 import {
-  createStaticSettings,
+  memoryBufferLayer,
+  memorySchedulerLayer,
+  staticSettingsLayer,
   type TenantSettings,
 } from "@auththread/adapter-kit";
 import { auth0Adapter } from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
-import { createNodeServer } from "@auththread/runtime-node";
 import {
   hashUser,
   parseSpanId,
@@ -13,6 +14,9 @@ import {
   sha256Hex,
 } from "@auththread/schema";
 import { createWideEventSink } from "@auththread/sink-wide-event";
+import { Stitcher, stitcherLayer } from "@auththread/stitcher";
+import { NodeRuntime } from "@effect/platform-node";
+import { Console, Effect, Layer, Schema } from "effect";
 
 const KEY = "at_smoke";
 const SALT = "smoke-tenant-salt";
@@ -22,14 +26,11 @@ const TRACE = "c1".repeat(16);
 const TRACE_ID = parseTraceId(TRACE);
 const PARENT = rootSpanId(TRACE_ID);
 
-const fail = (message: string): never => {
-  console.error(`smoke failed: ${message}`);
-  process.exit(1);
-};
+const fail = (message: string): Effect.Effect<never> =>
+  Effect.die(new Error(`smoke failed: ${message}`));
 
-const check = (condition: boolean, message: string): void => {
-  if (!condition) fail(message);
-};
+const check = (condition: boolean, message: string): Effect.Effect<void> =>
+  condition ? Effect.void : fail(message);
 
 const tenant: TenantSettings = {
   tenant: "smoke",
@@ -40,21 +41,6 @@ const tenant: TenantSettings = {
 };
 
 const lines: string[] = [];
-const server = createNodeServer({
-  providers: [oidcAdapter, auth0Adapter],
-  sinks: [
-    createWideEventSink({
-      sampling: { keep: ["all"], successRate: 1 },
-      write: (line) => lines.push(line),
-    }),
-  ],
-  settings: createStaticSettings([tenant]),
-  quietMs: 1000,
-  captureBatches: true,
-});
-
-const { port } = await server.listen(0, "127.0.0.1");
-const base = `http://127.0.0.1:${port}`;
 const auth = {
   authorization: `Bearer ${KEY}`,
   "content-type": "application/json",
@@ -117,71 +103,116 @@ const spans = [
   ),
 ];
 
-const unauthenticated = await fetch(`${base}/v1/compact-spans`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: "{}",
+const post = (path: string, body: unknown, headers: Record<string, string>) =>
+  new Request(`http://127.0.0.1${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+const program = Effect.gen(function* () {
+  const stitcher = yield* Stitcher;
+
+  const unauthenticated = yield* stitcher.handle(
+    post("/v1/compact-spans", {}, { "content-type": "application/json" }),
+  );
+  yield* check(
+    unauthenticated.status === 401,
+    "an unauthenticated request was accepted",
+  );
+
+  const accepted = yield* stitcher.handle(
+    post("/v1/compact-spans", { spans }, auth),
+  );
+  yield* check(accepted.status === 202, `spans returned ${accepted.status}`);
+
+  const feed = yield* stitcher.handle(
+    post(
+      "/v1/providers/auth0/log-stream",
+      {},
+      {
+        ...auth,
+        "x-auththread-feed-secret": "wrong",
+      },
+    ),
+  );
+  yield* check(feed.status === 401, "an unsigned feed request was accepted");
+
+  const feedAccepted = yield* stitcher.handle(
+    post(
+      "/v1/providers/auth0/log-stream",
+      {
+        log_id: "smoke_1",
+        date: new Date(now - 60).toISOString(),
+        type: "fp",
+        connection: "Username-Password-Authentication",
+        client_id: "client_smoke",
+        user_id: USER,
+        user_name: "smoke@example.com",
+        details: {},
+      },
+      { ...auth, "x-auththread-feed-secret": FEED_SECRET },
+    ),
+  );
+  yield* check(
+    feedAccepted.status === 202,
+    `feed returned ${feedAccepted.status}`,
+  );
+
+  yield* stitcher.runDue(now + 5000);
+
+  const line = lines[0];
+  if (line === undefined) return yield* fail("no wide event was written");
+  const WideEventSummary = Schema.Struct({
+    outcome: Schema.String,
+    kind: Schema.String,
+    steps: Schema.Array(Schema.Struct({ name: Schema.String })),
+    correlationCounts: Schema.Struct({
+      exact: Schema.Number,
+      inferred: Schema.Number,
+    }),
+  });
+  const wide = yield* Effect.fromResult(
+    Schema.decodeUnknownResult(Schema.fromJsonString(WideEventSummary))(line),
+  ).pipe(Effect.orDie);
+
+  yield* check(wide.outcome === "denied", `outcome was ${wide.outcome}`);
+  yield* check(wide.kind === "login", `kind was ${wide.kind}`);
+  yield* check(
+    wide.steps.length === 5,
+    `expected 5 steps, got ${wide.steps.length}`,
+  );
+  yield* check(
+    wide.correlationCounts.inferred === 1,
+    "the feed event did not join by hint",
+  );
+  yield* check(
+    !line.includes(USER) && !line.includes("smoke@example.com"),
+    "the output contains a raw identifier",
+  );
+
+  yield* Console.log(line);
+  yield* Console.error(
+    `smoke ok: 401 without a key, 401 with a bad feed secret, one ${wide.outcome} journey with ${wide.steps.length} steps`,
+  );
 });
-check(
-  unauthenticated.status === 401,
-  "an unauthenticated request was accepted",
+
+const dependencies = Layer.mergeAll(
+  memoryBufferLayer,
+  memorySchedulerLayer,
+  staticSettingsLayer([tenant]),
 );
 
-const accepted = await fetch(`${base}/v1/compact-spans`, {
-  method: "POST",
-  headers: auth,
-  body: JSON.stringify({ spans }),
-});
-check(accepted.status === 202, `spans returned ${accepted.status}`);
+const layer = stitcherLayer({
+  providers: [oidcAdapter, auth0Adapter],
+  sinks: [
+    createWideEventSink({
+      sampling: { keep: ["all"], successRate: 1 },
+      write: (line) => lines.push(line),
+    }),
+  ],
+  quietMs: 1000,
+  captureBatches: true,
+}).pipe(Layer.provide(dependencies));
 
-const feed = await fetch(`${base}/v1/providers/auth0/log-stream`, {
-  method: "POST",
-  headers: { ...auth, "x-auththread-feed-secret": "wrong" },
-  body: "{}",
-});
-check(feed.status === 401, "an unsigned feed request was accepted");
-
-const feedAccepted = await fetch(`${base}/v1/providers/auth0/log-stream`, {
-  method: "POST",
-  headers: { ...auth, "x-auththread-feed-secret": FEED_SECRET },
-  body: JSON.stringify({
-    log_id: "smoke_1",
-    date: new Date(now - 60).toISOString(),
-    type: "fp",
-    connection: "Username-Password-Authentication",
-    client_id: "client_smoke",
-    user_id: USER,
-    user_name: "smoke@example.com",
-    details: {},
-  }),
-});
-check(feedAccepted.status === 202, `feed returned ${feedAccepted.status}`);
-
-await server.stitcher.runDue(now + 5000);
-await server.close();
-
-const line = lines[0];
-if (line === undefined) fail("no wide event was written");
-const wide = JSON.parse(line) as {
-  outcome: string;
-  kind: string;
-  steps: Array<{ name: string }>;
-  correlationCounts: { exact: number; inferred: number };
-};
-
-check(wide.outcome === "denied", `outcome was ${wide.outcome}`);
-check(wide.kind === "login", `kind was ${wide.kind}`);
-check(wide.steps.length === 5, `expected 5 steps, got ${wide.steps.length}`);
-check(
-  wide.correlationCounts.inferred === 1,
-  "the feed event did not join by hint",
-);
-check(
-  !line.includes(USER) && !line.includes("smoke@example.com"),
-  "the output contains a raw identifier",
-);
-
-console.log(line);
-console.error(
-  `smoke ok: 401 without a key, 401 with a bad feed secret, one ${wide.outcome} journey with ${wide.steps.length} steps`,
-);
+NodeRuntime.runMain(program.pipe(Effect.provide(layer)));

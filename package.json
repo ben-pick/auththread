@@ -24,7 +24,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
     "dependency-cruiser": "catalog:",
+    "effect": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

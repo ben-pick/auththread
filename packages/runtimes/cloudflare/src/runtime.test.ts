@@ -2,10 +2,15 @@ import {
   journeyCorpus,
   runEndToEndConformance,
   runRuntimeConformance,
+  StitcherUnderTest,
+  staticSettingsLayer,
   type TenantSettings,
 } from "@auththread/adapter-kit";
 import { sha256Hex, toWideEvent } from "@auththread/schema";
-import { describe, expect, it } from "vitest";
+import { Stitcher } from "@auththread/stitcher";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { describe, expect } from "vitest";
 import { createJourneyDurableObject } from "./durable-object.ts";
 import {
   createAlarmScheduler,
@@ -53,121 +58,135 @@ const tenant: TenantSettings = {
   providerSettings: {},
 };
 
+const settingsLayer = staticSettingsLayer([tenant]);
+
 describe("durable object runtime", () => {
-  it("passes runtime conformance", async () => {
-    const storage = new FakeStorage();
-    const report = await runRuntimeConformance({
-      buffer: createDurableObjectBuffer(storage),
-      scheduler: createAlarmScheduler(storage, () => fixture.nowMs),
-      fixture: {
-        traceId: fixture.traceId,
-        otherTraceId: "b7".repeat(16) as typeof fixture.traceId,
-        tenant: "acme",
-        spans: fixture.spans,
-        nowMs: fixture.nowMs,
-      },
-    });
-    expect(report.failures).toEqual([]);
-  });
-
-  it("keeps the earliest alarm across schedules and cancellations", async () => {
-    const storage = new FakeStorage();
-    const scheduler = createAlarmScheduler(storage, () => fixture.nowMs);
-    await scheduler.schedule(fixture.traceId, 300);
-    expect(storage.alarmAt).toBe(300);
-    await scheduler.schedule("c7".repeat(16) as typeof fixture.traceId, 200);
-    expect(storage.alarmAt).toBe(200);
-    await scheduler.cancel("c7".repeat(16) as typeof fixture.traceId);
-    expect(storage.alarmAt).toBe(300);
-  });
-
-  it("finalises a journey from an alarm and exports it", async () => {
-    const storage = new FakeStorage();
-    let now = fixture.nowMs;
-    const DurableObject = createJourneyDurableObject({
-      providers: [],
-      sinks: [
-        {
-          id: "capture",
-          accepts: ["spans", "journey"],
-          sampling: { keep: ["all"], successRate: 1 },
-          render: (journey) => ({
-            sinkId: "capture",
-            journeyId: journey.traceId,
-            spans: [journey.root, ...journey.spans],
-            wideEvent: toWideEvent(journey),
-          }),
-          write: async () => undefined,
+  it.effect("passes runtime conformance", () =>
+    Effect.gen(function* () {
+      const storage = new FakeStorage();
+      const report = yield* runRuntimeConformance({
+        buffer: createDurableObjectBuffer(storage),
+        scheduler: createAlarmScheduler(storage, Effect.succeed(fixture.nowMs)),
+        fixture: {
+          traceId: fixture.traceId,
+          otherTraceId: "b7".repeat(16) as typeof fixture.traceId,
+          tenant: "acme",
+          spans: fixture.spans,
+          nowMs: fixture.nowMs,
         },
-      ],
-      settings: { getTenant: async () => tenant },
-      quietMs: 60_000,
-      captureBatches: true,
-      clock: () => now,
-    });
-    const instance = new DurableObject({ storage });
+      });
+      expect(report.failures).toEqual([]);
+    }),
+  );
 
-    const payload = JSON.stringify({
-      resourceSpans: [
-        {
-          resource: { attributes: [] },
-          scopeSpans: [
-            {
-              scope: { name: "test" },
-              spans: [
-                {
-                  traceId: fixture.traceId,
-                  spanId: "1111111111111111",
-                  name: "auth.app.login_start",
-                  kind: 1,
-                  startTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
-                  endTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
-                  attributes: [
-                    { key: "auth.provider", value: { stringValue: "oidc" } },
-                    { key: "auth.tenant", value: { stringValue: "acme" } },
-                  ],
-                  status: { code: 0 },
-                },
-              ],
+  it.effect("keeps the earliest alarm across schedules and cancellations", () =>
+    Effect.gen(function* () {
+      const storage = new FakeStorage();
+      const scheduler = createAlarmScheduler(
+        storage,
+        Effect.succeed(fixture.nowMs),
+      );
+      yield* scheduler.schedule(fixture.traceId, 300);
+      expect(storage.alarmAt).toBe(300);
+      yield* scheduler.schedule("c7".repeat(16) as typeof fixture.traceId, 200);
+      expect(storage.alarmAt).toBe(200);
+      yield* scheduler.cancel("c7".repeat(16) as typeof fixture.traceId);
+      expect(storage.alarmAt).toBe(300);
+    }),
+  );
+
+  it.effect("finalises a journey from an alarm and exports it", () =>
+    Effect.gen(function* () {
+      const storage = new FakeStorage();
+      let now = fixture.nowMs;
+      const DurableObject = createJourneyDurableObject({
+        providers: [],
+        sinks: [
+          {
+            id: "capture",
+            accepts: ["spans", "journey"],
+            sampling: { keep: ["all"], successRate: 1 },
+            render: (journey) => ({
+              sinkId: "capture",
+              journeyId: journey.traceId,
+              spans: [journey.root, ...journey.spans],
+              wideEvent: toWideEvent(journey),
+            }),
+            write: () => Effect.void,
+          },
+        ],
+        settings: settingsLayer,
+        quietMs: 60_000,
+        captureBatches: true,
+        now: Effect.sync(() => now),
+      });
+      const instance = new DurableObject({ storage });
+
+      const payload = JSON.stringify({
+        resourceSpans: [
+          {
+            resource: { attributes: [] },
+            scopeSpans: [
+              {
+                scope: { name: "test" },
+                spans: [
+                  {
+                    traceId: fixture.traceId,
+                    spanId: "1111111111111111",
+                    name: "auth.app.login_start",
+                    kind: 1,
+                    startTimeUnixNano: String(
+                      BigInt(fixture.nowMs) * 1_000_000n,
+                    ),
+                    endTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
+                    attributes: [
+                      {
+                        key: "auth.provider",
+                        value: { stringValue: "oidc" },
+                      },
+                      { key: "auth.tenant", value: { stringValue: "acme" } },
+                    ],
+                    status: { code: 0 },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      const response = yield* Effect.promise(() =>
+        instance.fetch(
+          new Request("https://do/v1/spans", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer at_test",
+              "content-type": "application/json",
             },
-          ],
-        },
-      ],
-    });
+            body: payload,
+          }),
+        ),
+      );
+      expect(response.status).toBe(202);
+      expect(storage.alarmAt).not.toBeNull();
 
-    const response = await instance.fetch(
-      new Request("https://do/v1/spans", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer at_test",
-          "content-type": "application/json",
-        },
-        body: payload,
-      }),
-    );
-    expect(response.status).toBe(202);
-    expect(storage.alarmAt).not.toBeNull();
+      now = fixture.nowMs + 61_000;
+      yield* Effect.promise(() => instance.alarm());
+      const batches = yield* Effect.promise(() =>
+        instance.runtime.runPromise(
+          Effect.flatMap(Stitcher, (stitcher) => stitcher.flush),
+        ),
+      );
+      expect(batches).toHaveLength(1);
+      expect(batches[0]?.wideEvent?.outcome).toBe("abandoned");
+      expect(storage.alarmAt).toBeNull();
+    }),
+  );
 
-    now = fixture.nowMs + 61_000;
-    await instance.alarm();
-    const batches = instance.stitcher.flush();
-    expect(batches).toHaveLength(1);
-    expect(batches[0]?.wideEvent?.outcome).toBe("abandoned");
-    expect(storage.alarmAt).toBeNull();
-  });
-
-  it("matches the Node runtime across delivery order", async () => {
-    const report = await runEndToEndConformance({
-      fixture: {
-        provider: fixture.provider,
-        tenant: fixture.tenant,
-        nowMs: fixture.nowMs,
-        quietMs: fixture.quietMs,
-        spans: fixture.spans,
-        events: fixture.events,
-        expectedOutcome: fixture.expectedOutcome,
-      },
-      create: async () => {
+  it.effect("matches the Node runtime across delivery order", () =>
+    Effect.gen(function* () {
+      const layerFor = () => {
+        const storage = new FakeStorage();
         const DurableObject = createJourneyDurableObject({
           providers: [],
           sinks: [
@@ -181,16 +200,59 @@ describe("durable object runtime", () => {
                 spans: [journey.root, ...journey.spans],
                 wideEvent: toWideEvent(journey),
               }),
-              write: async () => undefined,
+              write: () => Effect.void,
             },
           ],
-          settings: { getTenant: async () => tenant },
+          settings: settingsLayer,
           captureBatches: true,
-          clock: () => fixture.nowMs,
+          now: Effect.succeed(fixture.nowMs),
         });
-        return new DurableObject({ storage: new FakeStorage() }).stitcher;
-      },
-    });
-    expect(report.failures).toEqual([]);
-  });
+        const instance = new DurableObject({ storage });
+
+        return Layer.succeed(StitcherUnderTest, {
+          ingestSpan: (span) =>
+            Effect.promise(() =>
+              instance.runtime.runPromise(
+                Effect.flatMap(Stitcher, (stitcher) =>
+                  stitcher.ingestSpan(span).pipe(Effect.orDie),
+                ),
+              ),
+            ),
+          ingestEvent: (event) =>
+            Effect.promise(() =>
+              instance.runtime.runPromise(
+                Effect.flatMap(Stitcher, (stitcher) =>
+                  stitcher.ingestEvent(event).pipe(Effect.orDie),
+                ),
+              ),
+            ),
+          runDue: (nowMs) =>
+            Effect.promise(() =>
+              instance.runtime.runPromise(
+                Effect.flatMap(Stitcher, (stitcher) => stitcher.runDue(nowMs)),
+              ),
+            ),
+          flush: Effect.promise(() =>
+            instance.runtime.runPromise(
+              Effect.flatMap(Stitcher, (stitcher) => stitcher.flush),
+            ),
+          ),
+        });
+      };
+
+      const report = yield* runEndToEndConformance({
+        fixture: {
+          provider: fixture.provider,
+          tenant: fixture.tenant,
+          nowMs: fixture.nowMs,
+          quietMs: fixture.quietMs,
+          spans: fixture.spans,
+          events: fixture.events,
+          expectedOutcome: fixture.expectedOutcome,
+        },
+        create: layerFor,
+      });
+      expect(report.failures).toEqual([]);
+    }),
+  );
 });
