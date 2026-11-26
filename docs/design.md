@@ -473,7 +473,7 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 24 test files, 129 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 25 test files, 137 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |

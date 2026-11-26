@@ -5,7 +5,7 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 24 test files, 129 tests, no violations.
+actionlint and the agent file checks. Current result: 25 test files, 137 tests, no violations.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
@@ -29,6 +29,11 @@ actionlint and the agent file checks. Current result: 24 test files, 129 tests, 
   payloads, including an adapter that must fail.
 - **Runtime conformance.** Memory, Node timer, SQLite and Durable Object alarm runtimes pass
   `runRuntimeConformance`.
+- **Dependency graph.** `pnpm graph` collapses dependency-cruiser output to workspace packages
+  and prints a Mermaid flowchart. `pnpm graph --base <ref> --format markdown` checks the ref
+  out into a detached worktree and reports added and removed packages and edges. The PR job
+  uploads the markdown; a separate no-checkout job posts one sticky comment. The graph is
+  informational, and `pnpm boundaries` still fails the build on a violation.
 - **SQLite restart recovery.** The store runs with WAL, passes runtime conformance, and a
   journey that was still in flight when the first store closed is finalised from the second
   store with the expected outcome. A test also tries to append to another tenant's trace and
@@ -42,7 +47,7 @@ actionlint and the agent file checks. Current result: 24 test files, 129 tests, 
   sends `auth.transaction.id`, the feed parses `details.transaction_id`, and the stitcher
   joins exactly per tenant. Tests cover failure then success, success then failure, pending
   adoption by transaction, and a transaction lookup outside the window.
-- **Boundaries.** `pnpm boundaries` reports no violation across 86 modules.
+- **Boundaries.** `pnpm boundaries` reports no violation across 97 modules.
 - **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
   unknown keys, and refuses a directory with a shared key or duplicate tenant.
 

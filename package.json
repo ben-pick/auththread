@@ -18,6 +18,7 @@
     "agents:index": "node packages/tooling/agents/src/cli.ts index",
     "demo": "node scripts/demo.ts",
     "smoke": "node scripts/smoke.ts",
+    "graph": "node packages/tooling/dep-graph/src/cli.ts",
     "probe:auth0": "node scripts/auth0-probe.ts",
     "budget": "node packages/tooling/budget/src/cli.ts"
   },

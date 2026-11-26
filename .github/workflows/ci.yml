@@ -28,3 +28,66 @@ jobs:
         with:
           name: journey
           path: journey.jsonl
+
+  # Builds the package graph and its diff against the PR base. It only uploads
+  # markdown: the comment job has a write token and never checks out PR code.
+  dep-graph:
+    name: dep-graph
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Build dependency graph
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          pnpm graph --base "origin/${BASE_REF}" --format markdown > dep-graph.md
+          cat dep-graph.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dep-graph
+          path: dep-graph.md
+
+  dep-graph-comment:
+    name: dep-graph-comment
+    needs: dep-graph
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dep-graph
+          path: dep-graph
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          file=dep-graph/dep-graph.md
+          marker='<!-- auththread-dep-graph -->'
+          chars=$(LC_ALL=C.UTF-8 wc -m < "$file")
+          if [ "$chars" -gt 62000 ] || [ "$(sed -n 1p "$file")" != "$marker" ]; then
+            echo "::error::dependency graph report has an unexpected shape; not posting"
+            exit 1
+          fi
+          id=$(gh api --paginate "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${marker}\"))) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/${GH_REPO}/issues/comments/${id}" -F body=@"$file" > /dev/null
+            echo "Updated comment ${id}"
+          else
+            gh api --method POST "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" -F body=@"$file" > /dev/null
+            echo "Posted a new comment"
+          fi

@@ -217,13 +217,14 @@ the stitcher agree without a round trip.
 ## Verification
 
 ```sh
-mise exec -- pnpm check   # types, lint, 129 tests, boundaries, budgets, agent files
+mise exec -- pnpm check   # types, lint, 137 tests, boundaries, budgets, agent files
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
+mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
 mise exec -- pnpm budget  # browser SDK 2,659 B gzip, snippet 936 B gzip
 ```
 
-Current status: 24 test files, 129 tests, 86 modules, no boundary violations. See
+Current status: 25 test files, 137 tests, 97 modules, no boundary violations. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap
