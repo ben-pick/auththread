@@ -79,9 +79,9 @@ export const createJourneyDurableObject = (
         ...(options.captureBatches === undefined
           ? {}
           : { captureBatches: options.captureBatches }),
-        ...(options.flushIntervalMs === undefined
-          ? {}
-          : { flushIntervalMs: options.flushIntervalMs }),
+        // The alarm flushes sinks. A sleep timer here would keep the object
+        // awake between journeys and add idle duration cost.
+        flushIntervalMs: options.flushIntervalMs ?? 0,
         ...(options.onError === undefined ? {} : { onError: options.onError }),
         ...(options.now === undefined ? {} : { now: options.now }),
       }).pipe(

@@ -58,7 +58,7 @@ export interface StitcherOptions {
   /** Keep emitted batches in memory so tests and the demo can read them. */
   readonly captureBatches?: boolean;
   readonly onError?: (error: unknown) => Effect.Effect<void>;
-  /** How often sinks flush their own buffer. Default 60 seconds. */
+  /** How often sinks flush their own buffer. Default 60 seconds. 0 disables it. */
   readonly flushIntervalMs?: number;
   /** Test seam. Production reads the Effect `Clock`. */
   readonly now?: Effect.Effect<number>;
@@ -920,14 +920,17 @@ const makeStitcher = (
       withLock(finalise(traceId, nowMs)),
     );
     yield* Effect.addFinalizer(() => Effect.andThen(service.drain, flushSinks));
-    yield* Effect.forkScoped(
-      Effect.forever(
-        Effect.andThen(
-          Effect.sleep(Duration.millis(options.flushIntervalMs ?? 60_000)),
-          flushSinks,
+    const flushIntervalMs = options.flushIntervalMs ?? 60_000;
+    if (flushIntervalMs > 0) {
+      yield* Effect.forkScoped(
+        Effect.forever(
+          Effect.andThen(
+            Effect.sleep(Duration.millis(flushIntervalMs)),
+            flushSinks,
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     return service;
   });
