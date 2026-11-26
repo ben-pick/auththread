@@ -146,6 +146,7 @@ interface Journey {
   root: Span;
   provider: string;
   tenant: string;
+  kind: "login" | "signup" | "reset" | "step_up";
   outcome: "success" | "failed" | "abandoned" | "denied";
   startedAt: number;
   endedAt: number;
@@ -310,7 +311,8 @@ build proof. The memory buffer is single instance and loses data on restart.
 - The whole stitcher lives in a Durable Object. Storage backs the buffer, the hint index and
   the alarm list.
 - One object per tenant, not one per journey (ADR-0005). Alarms drive finalisation.
-- The Worker forwards a request to the object named by `?tenant=`.
+- The Worker resolves the API key with an in-process key directory, then forwards the request
+  to the object named after that tenant. The object authenticates the key again before ingest.
 
 **Rebuttal point.** The plan says one Durable Object per login. That needs a directory that
 maps hints to trace IDs before a trace ID exists, and provider feeds arrive without one. One
@@ -335,7 +337,9 @@ Capabilities `browser`, `event-feed`, `hooks`, `hosted-page`, `config`.
   mapped to neutral types, errors mapped to neutral codes, identifiers hashed at parse.
 - `withTrace` wraps an Action. It proxies `api` to record calls, detects deny, redirect and
   challenge, rethrows the handler's error unchanged, and never throws from the transport.
-  HTTP transport has a 250 ms abort. Console transport adds no latency.
+  HTTP transport has a 250 ms abort. Console transport adds no latency. `stage` and `kind` are
+  options, so a pre-registration Action is not labelled `post_auth`.
+- Log Stream events for signup carry `auth.journey.kind: "signup"`.
 - Page snippet captures screen duration and UI errors from a meta tag config.
 - `fetchConfig` reads Actions from the Management API.
 
@@ -423,6 +427,8 @@ error handling become the expensive part.
 | Hint join requires a user hash and the same tenant | Join on client ID too | If providers expose a per-session client |
 | Deadlines never sit in the past | Trust client timestamps | Never for a quiet period |
 | New login attempt rotates the trace | Keep one trace per tab | If an app performs several logins in one redirect |
+| Batch browser spans | One request per span | If an edge runtime rejects batched beacons |
+| Worker key directory, one object per tenant | Tenant in the URL | If tenant config becomes dynamic without redeploys |
 | Fail-closed redaction | Keep raw identifiers when no salt | Never for a default |
 | Hash to 64 bits | Full 128-bit IDs | High volume or collision evidence |
 | 250 ms Action timeout | No timeout | Never in the login path |
@@ -449,11 +455,11 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 19 test files, 94 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 20 test files, 103 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | 3,139 bytes gzipped, build fails above 5 KB (**measured**) |
+| Browser budget | 3,486 bytes gzipped, build fails above 5 KB (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |

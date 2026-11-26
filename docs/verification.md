@@ -5,7 +5,7 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 19 test files, 94 tests, no violations.
+actionlint and the agent file checks. Current result: 20 test files, 103 tests, no violations.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
@@ -18,15 +18,17 @@ actionlint and the agent file checks. Current result: 19 test files, 94 tests, n
 - **Redaction.** Tests cover secret keys, hashed identifiers, missing salt, email and JWT
   stripping, and assert raw identifiers never reach a sink.
 - **Browser budget.** `pnpm --filter @auththread/example-keycloak build` reports the minified
-  browser bundle and fails above 5 KB gzipped. Measured: 6,215 bytes minified, 3,139 bytes
-  gzipped.
+  browser bundle and fails above 5 KB gzipped. Measured: 7,020 bytes minified, 3,486 bytes
+  gzipped, with span batching and the journey kind included.
 - **Provider conformance.** OIDC and Auth0 pass `runProviderConformance` against recorded
   payloads, including an adapter that must fail.
 - **Runtime conformance.** Memory, Node timer and Durable Object alarm runtimes pass
   `runRuntimeConformance`.
 - **Sink conformance.** OTLP, wide event and webhook pass `runSinkConformance`, including
   HMAC verification and webhook retry behaviour.
-- **Boundaries.** `pnpm boundaries` reports no violation across 71 modules.
+- **Boundaries.** `pnpm boundaries` reports no violation across 73 modules.
+- **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
+  unknown keys, and refuses a directory with a shared key or duplicate tenant.
 
 ## Not verified here
 
@@ -64,6 +66,18 @@ tests, rather than deferred:
   requires a root span in a spans sink, uses 20 distinct concurrent IDs, compares raw output
   without re-sorting, and rejects a stitcher that silently drops provider events.
 - Ordering uses code point comparison, not `localeCompare`, so bytes do not depend on ICU.
+
+## Follow-up
+
+After the review, three changes landed:
+
+- `auth.journey.kind` distinguishes `login`, `signup`, `reset` and `step_up` on the journey
+  and the root span. The Auth0 feed marks signup events, the Action wrapper takes a `stage`
+  and `kind`, and the browser SDK takes a `kind`.
+- The browser SDK batches spans, flushes on the redirect, the callback and a page hide, and
+  stays at 3,486 bytes gzipped.
+- The Cloudflare Worker resolves the API key with `createKeyDirectory` and routes to one
+  Durable Object per tenant, so tenant state is isolated before ingest.
 
 ## Rerun
 
