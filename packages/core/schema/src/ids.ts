@@ -1,7 +1,20 @@
 import { sha256Hex } from "./sha256.ts";
 
-export type TraceId = string & { readonly _tag: "TraceId" };
-export type SpanId = string & { readonly _tag: "SpanId" };
+/**
+ * Structurally identical to Effect's `Brand.Brand<"auththread/TraceId">`, so a
+ * schema in the server zone can produce a TraceId without importing Effect
+ * types into this package.
+ */
+export type TraceId = string & {
+  readonly "~effect/Brand": {
+    readonly "auththread/TraceId": "auththread/TraceId";
+  };
+};
+export type SpanId = string & {
+  readonly "~effect/Brand": {
+    readonly "auththread/SpanId": "auththread/SpanId";
+  };
+};
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SPAN_ID = /^[0-9a-f]{16}$/;

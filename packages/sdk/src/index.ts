@@ -1,25 +1,32 @@
 export type {
-  JourneyBuffer,
+  JourneyBufferService,
   JourneyItem,
   ProviderAdapter,
-  Scheduler,
-  Secrets,
-  SettingsStore,
+  SamplingPolicy,
+  SchedulerService,
   Sink,
   SinkBatch,
   TenantSettings,
 } from "@auththread/adapter-kit";
 export {
-  createMemoryBuffer,
-  createMemoryScheduler,
-  createStaticSettings,
+  DEFAULT_SAMPLING,
+  JourneyBuffer,
+  memoryBufferLayer,
+  memorySchedulerLayer,
+  Scheduler,
+  Secrets,
+  SettingsStore,
+  secretsLayer,
+  staticSettingsLayer,
 } from "@auththread/adapter-kit";
-export type { AuththreadConfig, TenantConfig } from "@auththread/config";
-export { parseTenantConfig, toTenantSettings } from "@auththread/config";
 export type {
-  Clock,
-  Stitcher,
   StitcherOptions,
+  StitcherService,
   StitcherStats,
 } from "@auththread/stitcher";
-export { createStitcher } from "@auththread/stitcher";
+export {
+  httpRoutes,
+  Stitcher,
+  serveHttp,
+  stitcherLayer,
+} from "@auththread/stitcher";

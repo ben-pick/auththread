@@ -1,4 +1,6 @@
+import { SinkError } from "@auththread/adapter-kit";
 import { compareStrings, sha256Hex } from "@auththread/schema";
+import { Effect } from "effect";
 import type { ObjectStore } from "./store.ts";
 
 export interface S3StoreOptions {
@@ -138,54 +140,78 @@ export async function signRequest(
 }
 
 /** An ObjectStore backed by any S3-compatible HTTP endpoint. */
-export function createS3Store(options: S3StoreOptions): ObjectStore {
+export const createS3Store = (options: S3StoreOptions): ObjectStore => {
   const endpoint = new URL(options.endpoint);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
   const forcePathStyle = options.forcePathStyle ?? true;
 
   return {
-    async put(key, body, contentType) {
-      const url = new URL(endpoint);
-      const base = url.pathname.replace(/\/+$/, "");
+    put: (key, body, contentType) =>
+      Effect.gen(function* () {
+        const url = new URL(endpoint);
+        const base = url.pathname.replace(/\/+$/, "");
 
-      if (forcePathStyle) {
-        url.pathname = `${base}/${encodePath(options.bucket)}/${encodePath(key)}`;
-      } else {
-        url.host = `${options.bucket}.${url.host}`;
-        url.pathname = `${base}/${encodePath(key)}`;
-      }
+        if (forcePathStyle) {
+          url.pathname = `${base}/${encodePath(options.bucket)}/${encodePath(key)}`;
+        } else {
+          url.host = `${options.bucket}.${url.host}`;
+          url.pathname = `${base}/${encodePath(key)}`;
+        }
 
-      const payloadHash = sha256Hex(body);
-      const signed = await signRequest({
-        method: "PUT",
-        url,
-        headers: {},
-        payloadHash,
-        region: options.region,
-        accessKeyId: options.accessKeyId,
-        secretAccessKey: options.secretAccessKey,
-        ...(options.sessionToken === undefined
-          ? {}
-          : { sessionToken: options.sessionToken }),
-        now: now(),
-      });
+        const payloadHash = sha256Hex(body);
+        const signed = yield* Effect.tryPromise({
+          try: () =>
+            signRequest({
+              method: "PUT",
+              url,
+              headers: {},
+              payloadHash,
+              region: options.region,
+              accessKeyId: options.accessKeyId,
+              secretAccessKey: options.secretAccessKey,
+              ...(options.sessionToken === undefined
+                ? {}
+                : { sessionToken: options.sessionToken }),
+              now: now(),
+            }),
+          catch: (cause) =>
+            new SinkError({
+              sink: "object-store",
+              message: "could not sign the request",
+              cause,
+            }),
+        });
 
-      const { host: _host, ...headers } = signed;
-      const response = await fetchImpl(url, {
-        method: "PUT",
-        headers: { ...headers, "content-type": contentType },
-        body,
-      });
+        const { host: _host, ...headers } = signed;
+        const response = yield* Effect.tryPromise({
+          try: (signal) =>
+            fetchImpl(url, {
+              method: "PUT",
+              headers: { ...headers, "content-type": contentType },
+              body,
+              signal,
+            }),
+          catch: (cause) =>
+            new SinkError({
+              sink: "object-store",
+              message: "object store request failed",
+              cause,
+            }),
+        });
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(
-          `object store responded ${response.status}${
-            text.length === 0 ? "" : `: ${text.slice(0, 200)}`
-          }`,
-        );
-      }
-    },
+        if (!response.ok) {
+          const text = yield* Effect.tryPromise({
+            try: () => response.text(),
+            catch: () => "",
+          }).pipe(Effect.orElseSucceed(() => ""));
+          return yield* new SinkError({
+            sink: "object-store",
+            message: `object store responded ${response.status}${
+              text.length === 0 ? "" : `: ${text.slice(0, 200)}`
+            }`,
+          });
+        }
+      }),
   };
-}
+};

@@ -49,7 +49,6 @@ export function createSinks(config: ServerConfig): Sink[] {
           forcePathStyle: config.s3.forcePathStyle,
         }),
         prefix: config.s3.prefix,
-        onError: (error) => console.error("auththread object store:", error),
       }),
     );
   }

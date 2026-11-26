@@ -1,27 +1,19 @@
 # @auththread/runtime-cloudflare
 
-Cloudflare runtime: Durable Object buffer, alarm scheduler, one object per tenant.
-
-## Install
-
-```sh
-pnpm add @auththread/runtime-cloudflare
-```
-
-## Usage
+Cloudflare Durable Object buffer, alarm scheduler and key directory.
 
 ```ts
-import { createCloudflareRuntime } from "@auththread/runtime-cloudflare";
+import { createJourneyDurableObject } from "@auththread/runtime-cloudflare";
 
-const runtime = createCloudflareRuntime({ providers, sinks });
-export default { fetch: runtime.fetch };
-export const JourneyDurableObject = runtime.JourneyDurableObject;
+const JourneyRuntime = createJourneyDurableObject({
+  providers,
+  sinks,
+  settings: staticSettingsLayer(tenants),
+});
 ```
 
-## Documentation
-
-See the [auththread repository](https://github.com/ben-pick/auththread) for the
-full documentation, deployment instructions and conformance rules.
+The Worker must export the returned class as `JourneyDurableObject` and bind it
+in `wrangler.jsonc`.
 
 ## License
 

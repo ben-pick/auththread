@@ -21,8 +21,8 @@ key is write-only.
 
 ## Configuration
 
-`AUTHTHREAD_CONFIG` is either a path to a JSON file or the JSON document itself.
-The schema is shared by every runtime:
+`AUTHTHREAD_CONFIG` is a path to a JSON file. The schema is shared by every
+runtime:
 
 ```json
 {
@@ -49,7 +49,7 @@ stored. Use `apiKeyHash` when the platform can compute the hash before deploy.
 
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `AUTHTHREAD_CONFIG` | yes | `/etc/auththread/config.json` | Config path or inline JSON. |
+| `AUTHTHREAD_CONFIG` | yes | `/etc/auththread/config.json` | Path to the tenant JSON file. |
 | `AUTHTHREAD_DB` | no | memory | SQLite path. Set it for restart recovery. |
 | `AUTHTHREAD_QUIET_MS` | no | `600000` | Finalise a journey after this quiet period. |
 | `AUTHTHREAD_CORRELATION_WINDOW_MS` | no | `120000` | Hint/transaction join window. |

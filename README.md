@@ -1,19 +1,19 @@
 # auththread
 
-**See one login journey end to end, in the observability tool you already use.**
+**See one login journey end to end, in the observability/analytics tool you already use.**
 
 [![status](https://img.shields.io/badge/status-v0.1-1f6feb)](#roadmap)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933)](#compatibility)
 [![otel](https://img.shields.io/badge/OpenTelemetry-optional-425CC7)](https://opentelemetry.io)
 
-Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
-one journey. It emits OTel spans, one wide event, or both. It is the instrumentation and the
-adapter framework, not a trace store.
+![One login, one trace: the auththread demo](docs/assets/auththread-demo.jpg)
 
-> **Status: v0.1, early.** The packages are not published to npm yet. Use the workspace or
-> the examples. Deep integration is available for Auth0. Generic OIDC gets browser-level
-> tracing everywhere.
+Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
+one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
+Auththread is the solution!
+
+> **Status: v0.1, early.** 
 
 ## Contents
 
@@ -41,7 +41,7 @@ A login crosses four systems that share nothing:
 - a provider event feed that arrives after the user is gone.
 
 Every provider has a different event model, so teams rebuild the glue per provider and again
-when they migrate. Auththread gives one neutral journey and one set of sinks, so the same
+when they migrate. Auththread gives one journey and one set of sinks, so the same
 dashboard works across providers.
 
 ## Quick start
@@ -49,7 +49,7 @@ dashboard works across providers.
 Requirements: [mise](https://mise.jdx.dev), Node 24 and pnpm 12. `mise install` provides the
 last two.
 
-### One journey in thirty seconds
+### Demo journey
 
 ```sh
 mise install
@@ -143,24 +143,31 @@ the edges honest.
 | Layer | Contract | Add one |
 | --- | --- | --- |
 | Provider | `ProviderAdapter`, `Feed`, `ParseContext` | [Adding a provider](docs/adding-a-provider.md) |
-| Runtime | `JourneyBuffer`, `Scheduler`, `SettingsStore`, `Secrets` | [Adding a runtime](docs/adding-a-runtime.md) |
-| Sink | `Sink` with `render`, `write`, optional `flush` and `idempotencyKey` | Copy [`sink-webhook`](packages/sinks/webhook/src/index.ts) or [`sink-object-store`](packages/sinks/object-store/src/index.ts) |
+| Runtime | `JourneyBuffer`, `Scheduler`, `SettingsStore`, `Secrets` Effect services | [Adding a runtime](docs/adding-a-runtime.md) |
+| Sink | `Sink` with `render`, Effect `write`, optional `flush` and `idempotencyKey` | Copy [`sink-webhook`](packages/sinks/webhook/src/index.ts) or [`sink-object-store`](packages/sinks/object-store/src/index.ts) |
 | Browser helper | `BrowserProvider` | Provider package |
 | Hook wrapper | `withTrace` | [`auth0/actions`](packages/providers/auth0/src/actions.ts) |
 | Object storage | `ObjectStore` with one `put` method | [`packages/sinks/object-store`](packages/sinks/object-store/src/store.ts) |
-| HTTP host | `fetch(Request): Promise<Response>` | Mount the stitcher on any Fetch runtime |
+| HTTP host | `httpRoutes` over Effect `HttpRouter`, or the stitcher web port | Mount `nodeServerLayer` or `HttpRouter.toWebHandler` |
 | Conformance | Four runners in `adapter-kit` | A green suite is what "supported" means |
 
 Composition happens in examples, not in core:
 
 ```ts
-const stitcher = createStitcher({
+const stitcher = stitcherLayer({
   providers: [oidcAdapter, auth0Adapter],
-  buffer: createMemoryBuffer(),
-  scheduler: createMemoryScheduler(),
-  settings,
   sinks: [createWideEventSink(), createOtlpSink({ exporter })],
-});
+}).pipe(
+  Layer.provide(
+    Layer.mergeAll(memoryBufferLayer, memorySchedulerLayer, staticSettingsLayer(tenants)),
+  ),
+);
+
+const server = nodeServerLayer({ port: 8787 }).pipe(
+  Layer.provide(stitcher),
+);
+
+Layer.launch(server).pipe(NodeRuntime.runMain);
 ```
 
 ## How it works
@@ -192,14 +199,13 @@ the stitcher agree without a round trip.
 | --- | --- |
 | [`@auththread/schema`](packages/core/schema) | Neutral attributes, redaction, ids, journey and wide event |
 | [`@auththread/otlp`](packages/core/otlp) | OTLP/HTTP JSON encoder and exporters |
-| [`@auththread/adapter-kit`](packages/core/adapter-kit) | Contracts, memory runtime, conformance suites, corpus |
-| [`@auththread/stitcher`](packages/core/stitcher) | `createStitcher`, the Fetch handler and the join |
-| [`@auththread/config`](packages/core/config) | Shared tenant config parsing for every runtime |
-| [`@auththread/sdk`](packages/sdk) | Server SDK facade: neutral core, `./node`, `./cloudflare` |
+| [`@auththread/adapter-kit`](packages/core/adapter-kit) | Effect contracts, memory layers, conformance suites, corpus |
+| [`@auththread/stitcher`](packages/core/stitcher) | `Stitcher` service, Effect HTTP routes and the join |
+| [`@auththread/sdk`](packages/sdk) | Effect server SDK facade: neutral core, `./node`, `./cloudflare` |
 | [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
-| [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter |
-| [`@auththread/auth0`](packages/providers/auth0) | Adapter, browser helper, Action wrapper, page snippet |
-| [`@auththread/runtime-node`](packages/runtimes/node) | Node server, timer scheduler, file settings, SQLite buffer |
+| [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter; browser helper at `/browser` |
+| [`@auththread/auth0`](packages/providers/auth0) | Adapter; browser helper at `/browser`, Action wrapper, page snippet |
+| [`@auththread/runtime-node`](packages/runtimes/node) | Node server layer, poll scheduler, file settings, SQLite buffer |
 | [`@auththread/runtime-cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
 | [`@auththread/sink-otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
 | [`@auththread/sink-wide-event`](packages/sinks/wide-event) | One JSON journey per line |
@@ -239,10 +245,11 @@ mise exec -- pnpm pack:check  # tarball contents, protocols, declaration imports
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
-mise exec -- pnpm budget  # browser SDK 2,506 B gzip, snippet 936 B gzip
+mise exec -- pnpm budget  # current bundle sizes against their budgets
+mise exec -- pnpm budget --base origin/main --format markdown  # PR bundle report
 ```
 
-Current status: 28 test files, 142 tests, 108 modules, no boundary violations. See
+Current status: `pnpm check` is green and `pnpm boundaries` reports no violation. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap

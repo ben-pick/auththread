@@ -1,14 +1,15 @@
 export type {
-  CloudflareEnv,
-  CloudflareRuntime,
-  CloudflareRuntimeOptions,
+  AlarmScheduler,
   DirectoryTenant,
+  DurableObjectStateLike,
+  DurableObjectStorageLike,
   JourneyDurableObjectInstance,
   JourneyDurableObjectOptions,
   KeyDirectory,
 } from "@auththread/runtime-cloudflare";
 export {
-  createCloudflareRuntime,
+  createAlarmScheduler,
+  createDurableObjectBuffer,
   createJourneyDurableObject,
   createKeyDirectory,
 } from "@auththread/runtime-cloudflare";

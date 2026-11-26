@@ -8,12 +8,6 @@
   },
   "scripts": {
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check && pnpm template:check",
-    "build": "turbo run build",
-    "pack:check": "node scripts/pack-check.ts",
-    "template:check": "node scripts/template-check.ts",
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "pnpm build && pnpm pack:check && changeset publish",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -22,30 +16,39 @@
     "boundaries": "depcruise --config .dependency-cruiser.cjs packages",
     "agents:check": "node packages/tooling/agents/src/cli.ts check",
     "agents:index": "node packages/tooling/agents/src/cli.ts index",
+    "skills:update": "node packages/tooling/agents/src/cli.ts skills:update",
     "demo": "node scripts/demo.ts",
     "smoke": "node scripts/smoke.ts",
     "graph": "node packages/tooling/dep-graph/src/cli.ts",
     "probe:auth0": "node scripts/auth0-probe.ts",
-    "budget": "node packages/tooling/budget/src/cli.ts"
+    "budget": "node packages/tooling/budget/src/cli.ts",
+    "build": "turbo run build",
+    "pack:check": "node scripts/pack-check.ts",
+    "template:check": "node scripts/template-check.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && pnpm pack:check && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@changesets/cli": "^3.0.3",
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
     "dependency-cruiser": "catalog:",
-    "publint": "^0.3.25",
+    "effect": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@changesets/cli": "^3.0.3",
+    "publint": "^0.3.25"
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
     "@auththread/auth0": "workspace:*",
-    "@auththread/config": "workspace:^",
     "@auththread/oidc": "workspace:*",
     "@auththread/runtime-node": "workspace:*",
     "@auththread/schema": "workspace:*",
-    "@auththread/sdk": "workspace:^",
     "@auththread/sink-wide-event": "workspace:*",
-    "@auththread/stitcher": "workspace:*"
+    "@auththread/stitcher": "workspace:*",
+    "@auththread/sdk": "workspace:^"
   }
 }

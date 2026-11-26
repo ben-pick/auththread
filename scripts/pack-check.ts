@@ -32,10 +32,6 @@ const packages: readonly PublicPackage[] = [
     required: ["dist/index.js", "dist/index.d.ts"],
   },
   {
-    directory: "packages/core/config",
-    required: ["dist/index.js", "dist/index.d.ts"],
-  },
-  {
     directory: "packages/sdk",
     required: [
       "dist/index.js",

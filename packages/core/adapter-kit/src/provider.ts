@@ -5,6 +5,8 @@ import type {
   ProviderEvent,
   TraceId,
 } from "@auththread/schema";
+import type { Effect } from "effect";
+import type { FeedError, ProviderError } from "./errors.ts";
 
 export const CAPABILITIES = [
   "browser",
@@ -27,12 +29,18 @@ export interface FeedRequest {
 export interface Feed<Settings = unknown> {
   /** Mounted under /v1/providers/<adapter id>/. */
   readonly path: string;
-  verify(request: FeedRequest, settings: Settings): boolean | Promise<boolean>;
+  verify(
+    request: FeedRequest,
+    settings: Settings,
+  ): Effect.Effect<boolean, FeedError>;
   /**
    * Normalise the provider payload. Untrusted input: validate it here. Hash any
    * identifier with the supplied function instead of keeping it raw.
    */
-  parse(body: unknown, context: ParseContext): ProviderEvent[];
+  parse(
+    body: unknown,
+    context: ParseContext,
+  ): Effect.Effect<ProviderEvent[], FeedError>;
 }
 
 export interface ParseContext {
@@ -56,9 +64,14 @@ export interface ProviderAdapter<Settings = unknown> {
   /** Params that carry a trace ID through /authorize. Empty when the provider has none. */
   authorizeParams(traceId: TraceId): Record<string, string>;
   readonly feeds?: readonly Feed<Settings>[];
+  /** Pure: an exact trace ID when the event carries one, otherwise hints. */
   correlate(event: ProviderEvent, settings: Settings): Correlation;
+  /** Pure: maps a provider code to a neutral outcome. */
   classify(event: ProviderEvent): { outcome?: Outcome; errorCode?: string };
-  fetchConfig?(settings: Settings): Promise<ConfigSnapshot>;
+  /** L5: fetch hook versions for change tracking. */
+  fetchConfig?(
+    settings: Settings,
+  ): Effect.Effect<ConfigSnapshot, ProviderError>;
 }
 
 export type { Attributes };

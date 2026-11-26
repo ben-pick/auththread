@@ -11,9 +11,9 @@ The stitcher is platform-neutral. A runtime adapter supplies four things:
 
 ## Three levels of API
 
-1. **Turnkey:** `createNodeRuntime` or `createCloudflareRuntime`.
-2. **Compose:** `createStitcher({ providers, buffer, scheduler, settings, sinks })`.
-3. **Primitives:** implement `JourneyBuffer`, `Scheduler` and `SettingsStore`.
+1. **Turnkey:** `nodeServerLayer` or `createJourneyDurableObject`.
+2. **Compose:** `stitcherLayer({ providers, sinks })` with buffer, scheduler and settings layers.
+3. **Primitives:** implement the `JourneyBuffer`, `Scheduler` and `SettingsStore` Effect services.
 
 ## Rules
 

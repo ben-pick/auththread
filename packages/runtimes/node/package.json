@@ -1,7 +1,7 @@
 {
   "name": "@auththread/runtime-node",
   "version": "0.1.0",
-  "description": "Node server runtime: in-memory or SQLite buffer, timer scheduler, JSON settings.",
+  "description": "Node runtime: in-memory or SQLite buffer, poll scheduler, JSON settings, Effect HTTP server layer.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -23,9 +23,11 @@
     "@auththread/adapter-kit": "workspace:^",
     "@auththread/schema": "workspace:^",
     "@auththread/stitcher": "workspace:^",
-    "@auththread/config": "workspace:^"
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

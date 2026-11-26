@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createStitcher, parseTenantConfig } from "./index.ts";
+import { Stitcher, stitcherLayer } from "./index.ts";
 
 describe("sdk facade", () => {
-  it("exports the neutral stitcher", () => {
-    expect(typeof createStitcher).toBe("function");
-  });
-
-  it("exports the shared config parser", () => {
-    const config = parseTenantConfig({
-      tenants: [
-        { tenant: "acme", provider: "oidc", apiKey: "key", salt: "12345678" },
-      ],
-    });
-    expect(config.tenants[0]?.tenant).toBe("acme");
+  it("exports the Effect stitcher service and layer", () => {
+    expect(Stitcher).toBeDefined();
+    expect(typeof stitcherLayer).toBe("function");
   });
 });

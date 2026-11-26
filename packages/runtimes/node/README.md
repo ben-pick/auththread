@@ -1,32 +1,23 @@
 # @auththread/runtime-node
 
-Node server runtime: in-memory or SQLite buffer, timer scheduler, JSON settings.
-
-## Install
-
-```sh
-pnpm add @auththread/runtime-node
-```
-
-## Usage
+Node runtime layers: memory or SQLite buffer, poll scheduler, JSON settings and
+an Effect HTTP server.
 
 ```ts
-import { createNodeRuntime } from "@auththread/runtime-node";
+import { nodeServerLayer, fileSettingsLayer, sqliteStoreLayer } from "@auththread/runtime-node";
 
-const runtime = createNodeRuntime({
-  config,
-  providers,
-  sinks,
-  storage: { type: "sqlite", path: "/var/lib/auththread/state.db" },
-});
-
-await runtime.listen(8787);
+const http = nodeServerLayer({ port: 8787 }).pipe(
+  Layer.provide(
+    stitcherLayer({ providers, sinks }).pipe(
+      Layer.provide(sqliteStoreLayer({ path: "/var/lib/auththread/state.db" })),
+      Layer.provide(fileSettingsLayer("/etc/auththread/config.json")),
+    ),
+  ),
+);
 ```
 
-## Documentation
-
 See the [auththread repository](https://github.com/ben-pick/auththread) for the
-full documentation, deployment instructions and conformance rules.
+full composition and the install contract.
 
 ## License
 

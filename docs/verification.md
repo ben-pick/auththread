@@ -5,14 +5,15 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 28 test files, 142 tests, no violations.
+actionlint and the agent file checks. The suite is green and `pnpm boundaries` is clean.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
   hook, callback and provider event. Outcome `denied`, one inferred correlation.
-- **The HTTP surface.** `pnpm smoke` starts the Node runtime, sends four spans and one Auth0
-  log stream event over real HTTP, and asserts a 401 without a key, a 401 with a bad feed
-  secret, one denied journey with five steps, one inferred join, and no raw identifier.
+- **The HTTP surface.** `pnpm smoke` sends four spans and one Auth0 log stream event through
+  the stitcher HTTP handler, and asserts a 401 without a key, a 401 with a bad feed secret,
+  one denied journey with five steps, one inferred join, and no raw identifier. The Node
+  runtime also has a live-server test that fetches `/healthz` and posts a journey.
 - **Order tolerance.** `runEndToEndConformance` delivers the corpus in order, reversed,
   duplicated and delayed, and requires byte-identical batches.
 - **Cross runtime equality.** `packages/tooling/conformance` delivers the same corpus to the
@@ -20,15 +21,19 @@ actionlint and the agent file checks. Current result: 28 test files, 142 tests, 
   journeys.
 - **Redaction.** Tests cover secret keys, hashed identifiers, missing salt, email and JWT
   stripping, and assert raw identifiers never reach a sink.
-- **Publishable packages.** `pnpm build` emits `dist` JavaScript and declarations for every public package. `pnpm pack:check` packs all 15 public packages, rejects test files, source files, `workspace:`/`catalog:` protocols and `.ts` declaration imports, and runs `publint`.
-- **Canonical runtime entrypoints.** `createNodeRuntime` and `createCloudflareRuntime` compose the shared config, sinks and platform storage. Tests cover HTTP auth, tenant routing, finalisation and a bad key.
+- **Publishable packages.** `pnpm build` emits `dist` JavaScript and declarations for every public package. `pnpm pack:check` packs all 14 public packages, rejects test files, source files, `workspace:`/`catalog:` protocols and `.ts` declaration imports, and runs `publint`.
+- **Server config boundary.** `apps/server` loads env through Effect Config and Schema, validates numeric ranges, JSON headers and all-or-nothing webhook/S3 groups, and fails before the HTTP server starts.
 - **Node image.** The Dockerfile builds a bundled ESM server, runs as a non-root user, and answers `/healthz`. The CI container job builds the image and smokes it.
 - **Deployment and local artifacts.** `examples/local-compose` and `templates/cloudflare-worker` carry the local demo and Cloudflare contracts. `pnpm template:check` verifies the Worker template contract and typechecks it against the workspace API.
 - **Bundle budgets.** `pnpm budget` runs in `pnpm check` and fails above either budget. The
-  browser SDK alone, without demo app code, is 2,506 bytes gzipped against 5 KB. The page
-  snippet as shipped is 936 bytes gzipped against 8 KB. The Keycloak example app is measured
-  at 3,479 bytes gzipped and reported without a budget, because it contains the demo's own
-  page code.
+  browser SDK is bundled alone, without demo app code, and must stay under 5 KB gzipped. The
+  page snippet as shipped must stay under 8 KB. The Keycloak example app is measured and
+  reported without a budget, because it contains the demo's own page code. Run `pnpm budget`
+  for the current sizes. `pnpm budget --base <ref> --format markdown` measures the base in a
+  detached worktree and prints the gzipped, minified, budget and change columns. CI uploads
+  that markdown and a separate no-checkout job posts one sticky comment; the report is
+  informational and the budget gate stays in `pnpm check`. BundleMon was not adopted; see
+  [ADR-0011](decisions/0011-bundle-size-pr-report.md).
 - **Provider conformance.** OIDC and Auth0 pass `runProviderConformance` against recorded
   payloads, including an adapter that must fail.
 - **Runtime conformance.** Memory, Node timer, SQLite and Durable Object alarm runtimes pass
@@ -51,7 +56,7 @@ actionlint and the agent file checks. Current result: 28 test files, 142 tests, 
   sends `auth.transaction.id`, the feed parses `details.transaction_id`, and the stitcher
   joins exactly per tenant. Tests cover failure then success, success then failure, pending
   adoption by transaction, and a transaction lookup outside the window.
-- **Boundaries.** `pnpm boundaries` reports no violation across 108 modules.
+- **Boundaries.** `pnpm boundaries` reports no violation.
 - **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
   unknown keys, and refuses a directory with a shared key or duplicate tenant.
 
@@ -115,7 +120,8 @@ After the review, three changes landed:
   and the root span. The Auth0 feed marks signup events, the Action wrapper takes a `stage`
   and `kind`, and the browser SDK takes a `kind`.
 - The browser SDK batches spans, flushes on the redirect, the callback and a page hide, and
-  measures 2,506 bytes gzipped on its own. The page snippet is 936 bytes gzipped.
+  stays under the browser budget when measured on its own. The page snippet is measured as
+  shipped and stays under its own budget.
 - The Cloudflare Worker resolves the API key with `createKeyDirectory` and routes to one
   Durable Object per tenant, so tenant state is isolated before ingest.
 

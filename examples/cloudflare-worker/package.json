@@ -5,19 +5,23 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node -e \"console.log('no tests')\""
+    "test": "node -e \"console.log('no tests')\"",
+    "types": "wrangler types --no-include-runtime worker-configuration.d.ts && biome format --write worker-configuration.d.ts"
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
     "@auththread/auth0": "workspace:*",
     "@auththread/oidc": "workspace:*",
+    "@auththread/otlp": "workspace:*",
     "@auththread/runtime-cloudflare": "workspace:*",
     "@auththread/schema": "workspace:*",
     "@auththread/sink-otlp": "workspace:*",
     "@auththread/sink-wide-event": "workspace:*",
-    "@auththread/otlp": "workspace:*"
+    "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "catalog:"
   }
 }

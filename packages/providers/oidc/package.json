@@ -22,9 +22,11 @@
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:^",
-    "@auththread/schema": "workspace:^"
+    "@auththread/schema": "workspace:^",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

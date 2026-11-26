@@ -1,5 +1,5 @@
 import { init } from "@auththread/browser";
-import { oidcBrowser } from "@auththread/oidc";
+import { oidcBrowser } from "@auththread/oidc/browser";
 
 const KEYCLOAK =
   "http://localhost:8081/realms/auththread/protocol/openid-connect";

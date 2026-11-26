@@ -24,7 +24,7 @@ specifier leaks, then runs `publint`.
 
 ## Versions
 
-All 15 public packages are in one Changesets fixed group at v0.1. Pre-1.0:
+All 14 public packages are in one Changesets fixed group at v0.1. Pre-1.0:
 minor = breaking, patch = fix. Split adapters into independent versions only
 when community adapters exist.
 

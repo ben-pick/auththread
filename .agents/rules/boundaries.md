@@ -9,7 +9,7 @@ paths:
 | Tier | Path | May depend on |
 | --- | --- | --- |
 | Core | `packages/core/*` | core |
-| Provider | `packages/providers/*` | core |
+| Provider | `packages/providers/*` | core, Effect |
 | Runtime | `packages/runtimes/*` | core |
 | Sink | `packages/sinks/*` | core |
 | Tooling | `packages/tooling/*` | anything, dev only |
@@ -22,7 +22,9 @@ paths:
 - Runtimes never import providers or sinks.
 - Only the Node runtime, tooling and examples may import Node built-ins.
 - Only the Cloudflare runtime may import `@cloudflare/*`.
-- `packages/core/{schema,otlp,adapter-kit,browser}` carry no runtime dependency.
+- `packages/core/{schema,otlp,browser}` and provider browser/action helpers carry no runtime
+  dependency.
+- `adapter-kit`, `stitcher`, provider server exports, runtimes and sinks use Effect v4.
 
 `pnpm boundaries` is the source of truth. If a rule can be expressed in
 `.dependency-cruiser.cjs`, put it there instead of prose.

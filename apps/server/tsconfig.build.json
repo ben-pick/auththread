@@ -8,5 +8,6 @@
     "sourceMap": true,
     "inlineSources": true,
     "rewriteRelativeImportExtensions": true
-  }
+  },
+  "exclude": ["src/**/*.test.ts"]
 }

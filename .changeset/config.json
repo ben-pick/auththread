@@ -9,7 +9,6 @@
       "@auththread/adapter-kit",
       "@auththread/stitcher",
       "@auththread/browser",
-      "@auththread/config",
       "@auththread/sdk",
       "@auththread/auth0",
       "@auththread/oidc",

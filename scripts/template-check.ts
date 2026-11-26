@@ -49,8 +49,8 @@ assert(
 
 const workerSource = read("templates/cloudflare-worker/src/index.ts");
 assert(
-  workerSource.includes("createCloudflareRuntime"),
-  "the Worker template must use the SDK runtime entrypoint",
+  workerSource.includes("createJourneyDurableObject"),
+  "the Worker template must use the SDK Cloudflare runtime",
 );
 
 const compose = read("examples/local-compose/compose.yaml");
@@ -77,7 +77,6 @@ try {
     "packages/core/otlp",
     "packages/core/adapter-kit",
     "packages/core/stitcher",
-    "packages/core/config",
     "packages/sdk",
     "packages/providers/auth0",
     "packages/providers/oidc",
@@ -98,6 +97,20 @@ try {
       "dir",
     );
   }
+  symlinkSync(
+    join(root, "node_modules/effect"),
+    join(temp, "node_modules/effect"),
+    "dir",
+  );
+  mkdirSync(join(temp, "node_modules/@cloudflare"), { recursive: true });
+  symlinkSync(
+    join(
+      root,
+      "examples/cloudflare-worker/node_modules/@cloudflare/workers-types",
+    ),
+    join(temp, "node_modules/@cloudflare/workers-types"),
+    "dir",
+  );
   execFileSync("pnpm", ["exec", "tsc", "-p", join(temp, "tsconfig.json")], {
     cwd: root,
     stdio: "pipe",

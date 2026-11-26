@@ -73,9 +73,9 @@ module.exports = {
       name: "edge-zone-has-no-runtime-dependencies",
       severity: "error",
       comment:
-        "schema, otlp, adapter-kit and browser ship to browsers and login pages. They carry no third-party runtime code.",
+        "schema, otlp, browser and provider browser/action helpers ship to browsers and login pages. They carry no third-party runtime code.",
       from: {
-        path: "^packages/core/(schema|otlp|adapter-kit|browser)/src/",
+        path: "^(packages/core/(schema|otlp|browser)/src/|packages/providers/[^/]+/src/(browser|actions)\\.ts$)",
         pathNot: "\\.test\\.ts$",
       },
       to: { dependencyTypes: ["npm", "npm-optional"] },

@@ -1,41 +1,50 @@
 import { auth0Adapter } from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
-import { createNodeRuntime } from "@auththread/runtime-node";
-import { ConfigError, loadServerConfig } from "./config.ts";
+import {
+  memoryBufferLayer,
+  memorySchedulerLayer,
+  stitcherLayer,
+} from "@auththread/sdk";
+import {
+  fileSettingsLayer,
+  nodeServerLayer,
+  sqliteStoreLayer,
+} from "@auththread/sdk/node";
+import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { Effect, Layer } from "effect";
+import { loadServerConfig } from "./config.ts";
 import { createSinks } from "./sinks.ts";
 
-let config: ReturnType<typeof loadServerConfig>;
-try {
-  config = loadServerConfig(process.env);
-} catch (error) {
-  if (error instanceof ConfigError) {
-    console.error(error.message);
-    process.exit(1);
-  }
-  throw error;
-}
+const program = Effect.gen(function* () {
+  const config = yield* loadServerConfig;
 
-const runtime = createNodeRuntime({
-  config: config.tenants,
-  providers: [oidcAdapter, auth0Adapter],
-  sinks: createSinks(config),
-  storage: config.storage,
-  ...(config.quietMs === undefined ? {} : { quietMs: config.quietMs }),
-  ...(config.correlationWindowMs === undefined
-    ? {}
-    : { correlationWindowMs: config.correlationWindowMs }),
-  ...(config.ttlMs === undefined ? {} : { ttlMs: config.ttlMs }),
-  onError: (error) => console.error("auththread:", error),
-});
+  const stores =
+    config.storage.type === "sqlite"
+      ? sqliteStoreLayer({
+          path: config.storage.path,
+          ...(config.quietMs === undefined ? {} : { quietMs: config.quietMs }),
+        })
+      : Layer.mergeAll(memoryBufferLayer, memorySchedulerLayer);
 
-const { port: bound } = await runtime.listen(config.port);
-console.log(`auththread listening on :${bound}`);
+  const http = nodeServerLayer({ port: config.port }).pipe(
+    Layer.provide(
+      stitcherLayer({
+        providers: [oidcAdapter, auth0Adapter],
+        sinks: createSinks(config),
+        ...(config.quietMs === undefined ? {} : { quietMs: config.quietMs }),
+        ...(config.correlationWindowMs === undefined
+          ? {}
+          : { correlationWindowMs: config.correlationWindowMs }),
+        ...(config.ttlMs === undefined ? {} : { ttlMs: config.ttlMs }),
+        onError: (error) => Effect.logError("auththread", error),
+      }).pipe(
+        Layer.provide(stores),
+        Layer.provide(fileSettingsLayer(config.configPath)),
+      ),
+    ),
+  );
 
-let closing = false;
-const stop = (): void => {
-  if (closing) return;
-  closing = true;
-  void runtime.close().then(() => process.exit(0));
-};
-process.on("SIGTERM", stop);
-process.on("SIGINT", stop);
+  return yield* Layer.launch(http);
+}).pipe(Effect.provide(NodeServices.layer));
+
+NodeRuntime.runMain(program);

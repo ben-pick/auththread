@@ -1,14 +1,15 @@
+import { SettingsError } from "@auththread/adapter-kit";
 import { sha256Hex } from "@auththread/schema";
+import { Effect } from "effect";
 
 export interface DirectoryTenant {
   readonly tenant: string;
-  readonly apiKey?: string;
-  readonly apiKeyHash?: string;
+  readonly apiKey: string;
 }
 
 export interface KeyDirectory {
   /** Returns the tenant for a request's API key, or null. */
-  resolve(request: Request): Promise<string | null>;
+  resolve(request: Request): Effect.Effect<string | null>;
 }
 
 const keyOf = (request: Request): string | null => {
@@ -27,32 +28,32 @@ const keyOf = (request: Request): string | null => {
  * touched. Tenant config is static per deploy, so this needs no second object
  * and no consistency window.
  */
-export function createKeyDirectory(
+export const createKeyDirectory = (
   tenants: readonly DirectoryTenant[],
-): KeyDirectory {
-  const byHash = new Map<string, string>();
-  const names = new Set<string>();
+): Effect.Effect<KeyDirectory, SettingsError> =>
+  Effect.gen(function* () {
+    const byHash = new Map<string, string>();
+    const names = new Set<string>();
 
-  for (const tenant of tenants) {
-    if (names.has(tenant.tenant)) {
-      throw new Error(`duplicate tenant in the directory: ${tenant.tenant}`);
+    for (const tenant of tenants) {
+      if (names.has(tenant.tenant))
+        return yield* new SettingsError({
+          message: `duplicate tenant in the directory: ${tenant.tenant}`,
+        });
+      names.add(tenant.tenant);
+      const hash = sha256Hex(tenant.apiKey);
+      if (byHash.has(hash))
+        return yield* new SettingsError({
+          message: "two tenants share the same API key",
+        });
+      byHash.set(hash, tenant.tenant);
     }
-    names.add(tenant.tenant);
-    if (tenant.apiKey === undefined && tenant.apiKeyHash === undefined) {
-      throw new Error(`tenant ${tenant.tenant} needs an api key or hash`);
-    }
-    const hash = tenant.apiKeyHash ?? sha256Hex(tenant.apiKey ?? "");
-    if (byHash.has(hash)) {
-      throw new Error("two tenants share the same API key");
-    }
-    byHash.set(hash, tenant.tenant);
-  }
 
-  return {
-    async resolve(request) {
-      const key = keyOf(request);
-      if (key === null) return null;
-      return byHash.get(sha256Hex(key)) ?? null;
-    },
-  };
-}
+    return {
+      resolve: (request) => {
+        const key = keyOf(request);
+        if (key === null) return Effect.succeed(null);
+        return Effect.succeed(byHash.get(sha256Hex(key)) ?? null);
+      },
+    };
+  });

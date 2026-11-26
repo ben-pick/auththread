@@ -7,19 +7,20 @@
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run --fsModuleCachePath ./.vitest-cache",
-    "bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.mjs"
+    "bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"const require = (await import('node:module')).createRequire(import.meta.url);\" --outfile=dist/server.mjs"
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:^",
     "@auththread/auth0": "workspace:^",
-    "@auththread/config": "workspace:^",
     "@auththread/oidc": "workspace:^",
     "@auththread/otlp": "workspace:^",
-    "@auththread/runtime-node": "workspace:^",
+    "@auththread/sdk": "workspace:^",
+    "@auththread/sink-object-store": "workspace:^",
     "@auththread/sink-otlp": "workspace:^",
     "@auththread/sink-webhook": "workspace:^",
     "@auththread/sink-wide-event": "workspace:^",
-    "@auththread/sink-object-store": "workspace:^"
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
