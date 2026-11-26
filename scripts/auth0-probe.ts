@@ -72,16 +72,18 @@ const stringOf = (value: unknown): string | undefined =>
 
 const handleStream = (body: string): void => {
   for (const raw of parseEvents(body)) {
-    const event = asRecord(raw);
+    const envelope = asRecord(raw);
+    const event = asRecord(envelope.data ?? envelope);
     const details = asRecord(event.details);
     const references = asRecord(event.references);
     const executions = asRecord(details.actions).executions;
+    const logId = stringOf(event.log_id) ?? stringOf(envelope.log_id) ?? "?";
     const transactionId = stringOf(details.transaction_id);
     const sessionId = stringOf(details.session_id);
     const traceId = stringOf(references.trace_id);
 
     console.log(
-      `STREAM type=${stringOf(event.type) ?? "?"} log=${stringOf(event.log_id) ?? "?"}` +
+      `STREAM type=${stringOf(event.type) ?? "?"} log=${logId}` +
         ` transaction=${transactionId ?? "-"} session=${sessionId ?? "-"}` +
         ` refs_trace=${traceId ?? "-"} executions=${Array.isArray(executions) ? executions.length : "-"}`,
     );

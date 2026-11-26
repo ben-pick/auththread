@@ -67,7 +67,14 @@ export function parseLogStream(
   body: unknown,
   context: ParseContext,
 ): ProviderEvent[] {
-  return logsOf(body).flatMap((log): ProviderEvent[] => {
+  return logsOf(body).flatMap((raw): ProviderEvent[] => {
+    const log = isRecord(raw.data)
+      ? {
+          ...raw.data,
+          log_id:
+            typeof raw.data.log_id === "string" ? raw.data.log_id : raw.log_id,
+        }
+      : raw;
     const logId = log.log_id;
     const date = log.date;
     const type = log.type;

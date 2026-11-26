@@ -18,6 +18,9 @@ PROBE_SECRET=probe-secret pnpm probe:auth0
 
 It listens on `:8788` and prints the stream and Action payloads.
 
+The Log Stream wraps each event as `{ "log_id": "...", "data": { ... } }`. The probe unwraps
+`data` before reading `details`, so the printed line shows the transaction and session.
+
 ## 2. Expose it
 
 ```sh

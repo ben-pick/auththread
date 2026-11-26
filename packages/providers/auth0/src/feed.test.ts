@@ -66,6 +66,20 @@ describe("parseLogStream", () => {
     expect(event?.attributes["auth.journey.kind"]).toBe("signup");
   });
 
+  it("unwraps the log stream envelope", () => {
+    const [event] = parseLogStream(
+      { log_id: "outer", data: log() },
+      { hashUser },
+    );
+
+    expect(event).toMatchObject({
+      id: "auth0_64f0c1e2",
+      type: "login_failure",
+      hints: { userHash: "u_10", clientId: "client_abc" },
+    });
+    expect(event?.attributes["auth.error.vendor_code"]).toBe("fp");
+  });
+
   it("accepts arrays and batches, and skips malformed entries", () => {
     expect(
       parseLogStream([log(), log({ log_id: "other" })], { hashUser }),
