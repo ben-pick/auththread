@@ -12,34 +12,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - run: pnpm install --frozen-lockfile
+      # pnpm check includes `turbo run test`, so every package suite runs in
+      # one workspace-wide step. A per-package matrix only paid for extra
+      # installs: each suite takes milliseconds.
       - run: pnpm check
-
-  conformance:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - ./packages/core/schema
-          - ./packages/core/otlp
-          - ./packages/core/adapter-kit
-          - ./packages/core/browser
-          - ./packages/core/stitcher
-          - ./packages/providers/oidc
-          - ./packages/providers/auth0
-          - ./packages/runtimes/node
-          - ./packages/runtimes/cloudflare
-          - ./packages/sinks/otlp
-          - ./packages/sinks/wide-event
-          - ./packages/sinks/webhook
-          - ./packages/sinks/object-store
-          - ./packages/tooling/conformance
-          - ./packages/tooling/budget
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter "${{ matrix.package }}" test
 
   journey:
     runs-on: ubuntu-latest
