@@ -42,7 +42,11 @@ else
   AUTHTHREAD_TENANT="${AUTHTHREAD_TENANT:-dogfood}"
   AUTHTHREAD_KEY="${AUTHTHREAD_KEY:-$(openssl rand -hex 32)}"
   AUTHTHREAD_SALT="${AUTHTHREAD_SALT:-$(openssl rand -hex 32)}"
-  AUTHTHREAD_FEED_SECRET="${AUTHTHREAD_FEED_SECRET:-$(openssl rand -hex 32)}"
+  # Auth0 Custom Webhook only provides an Authorization header. The stitcher
+  # authenticates that header as the tenant API key, so for Auth0 the feed
+  # secret must be the same value. Other providers can use the separate
+  # x-auththread-feed-secret header.
+  AUTHTHREAD_FEED_SECRET="${AUTHTHREAD_FEED_SECRET:-$AUTHTHREAD_KEY}"
 
   cat > "$env_file" <<EOF
 AUTH0_DOMAIN=$AUTH0_DOMAIN
@@ -78,7 +82,7 @@ JSON
   echo "Use these in Auth0:"
   echo "  tenant:      $AUTHTHREAD_TENANT"
   echo "  API key:     $AUTHTHREAD_KEY"
-  echo "  feed secret: $AUTHTHREAD_FEED_SECRET"
+  echo "  feed token:  Bearer $AUTHTHREAD_FEED_SECRET"
   echo
   echo "The salt stays server-side."
 fi

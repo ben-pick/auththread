@@ -99,17 +99,27 @@ Auth0 Dashboard → **Monitoring → Log Streams → Create Log Stream → Custo
 Webhook** (naming varies by tenant).
 
 - Endpoint: `https://YOUR_TUNNEL/v1/providers/auth0/log-stream`
-- **Authorization Token**: `Bearer PASTE_FEED_SECRET`
+- **Authorization Token**: `Bearer PASTE_TENANT_KEY`
 - Content Type: `application/json`
 
-Auth0 calls this field “Authorization Token”; the feed accepts either the
-`Authorization: Bearer <feedSecret>` value or the older
-`x-auththread-feed-secret` header.
+Auth0 calls this field “Authorization Token” and only supports that header.
+The stitcher authenticates it as the tenant API key before checking the feed,
+so for Auth0 the config's `providerSettings.feedSecret` must equal the tenant
+API key. The script does this automatically. For providers that support custom
+headers, `x-auththread-feed-secret` remains the separate feed credential.
+
+This means the Auth0 feed credential is the same write-only tenant key used by
+the browser. For v0.1 dogfood that is acceptable, but a dedicated feed-secret
+index is the next hardening step.
 
 Trigger a login, then check the server log for a `provider event` step. Log
 Stream delivery can lag by a few seconds.
 
-## 4. Add the browser SDK
+## 4. Add the browser SDK to your Auth0 client application
+
+This is your application that calls Auth0 — a SPA, React app, Next.js app or
+plain web app. It is **not** the Universal Login page. Universal Login is hosted
+by Auth0 and gets the page snippet in step 9.
 
 Install the published packages:
 
