@@ -117,6 +117,16 @@ export const bundleFile = (
  * The SDK alone, with no demo app code, so the budget measures the library and
  * not the example that happens to import it.
  */
+const oidcBrowserSpecifier = (root: string): string => {
+  const manifest = resolve(root, "packages/providers/oidc/package.json");
+  const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
+    exports?: unknown;
+  };
+  return isRecord(pkg.exports) && pkg.exports["./browser"] !== undefined
+    ? "@auththread/oidc/browser"
+    : "@auththread/oidc";
+};
+
 export const bundleBrowserSdk = (
   root: string = REPO_ROOT,
 ): Promise<BundleResult> =>
@@ -124,7 +134,7 @@ export const bundleBrowserSdk = (
     stdin: {
       contents: [
         'import { init } from "@auththread/browser";',
-        'import { oidcBrowser } from "@auththread/oidc/browser";',
+        `import { oidcBrowser } from "${oidcBrowserSpecifier(root)}";`,
         "globalThis.auththread = { init, oidcBrowser };",
       ].join("\n"),
       resolveDir: keycloakDir(root),
