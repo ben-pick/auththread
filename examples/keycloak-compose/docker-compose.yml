@@ -22,6 +22,8 @@ services:
       dockerfile: examples/node-docker/Dockerfile
     environment:
       AUTHTHREAD_CONFIG: /etc/auththread/config.json
+      # The demo finalises ten seconds after the last span, not ten minutes.
+      AUTHTHREAD_QUIET_MS: "10000"
       OTLP_ENDPOINT: http://lgtm:4318/v1/traces
       OTEL_SERVICE_NAME: auththread
     volumes:

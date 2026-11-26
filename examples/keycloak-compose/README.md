@@ -12,12 +12,28 @@ docker compose -f examples/keycloak-compose/docker-compose.yml up --build
 Then:
 
 1. Open http://localhost:8080 and sign in as `demo` with password `demo`.
-2. Read the wide event with `docker compose -f examples/keycloak-compose/docker-compose.yml logs stitcher | grep auth.journey`.
+2. Wait about fifteen seconds. The stitcher finalises ten seconds after the last span.
+   Read the wide event with
+   `docker compose -f examples/keycloak-compose/docker-compose.yml logs stitcher | grep auth.journey`.
 3. Open http://localhost:3000, pick the Tempo data source, and search for service `auththread` to
    see the same journey as a trace.
 
-The failures to try: press Sign in and stop at the Keycloak form (abandoned), and sign in
-with a wrong password (failed). Both produce a journey.
+A successful Keycloak login produces three steps: `auth.app.login_start`,
+`auth.app.callback` and `auth.app.token_exchange`, with outcome `success`.
+
+What each path produces:
+
+| Path | Outcome |
+| --- | --- |
+| Sign in as demo | `success` |
+| Press Sign in and stop at the Keycloak form | `abandoned` |
+| Sign in with a wrong password and stop | `abandoned` |
+| Click back to the application after cancelling | `failed`, only if Keycloak redirects an error |
+
+Keycloak keeps a wrong password on its own page. It does not redirect an error, so the app
+never learns that the attempt failed. The journey goes quiet and finalises as `abandoned`.
+To exercise the `failed` path deterministically, use `pnpm smoke` or post a callback span
+with an error status.
 
 **Log pipeline gap.** The compose sends spans over OTLP to the collector, so Tempo works. The
 wide event is written to the stitcher's stdout, and this compose has no log shipper, so it
