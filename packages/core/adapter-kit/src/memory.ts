@@ -24,6 +24,7 @@ const newest = (items: JourneyItem[]): number =>
 export function createMemoryBuffer(): JourneyBuffer {
   const traces = new Map<TraceId, Map<string, JourneyItem>>();
   const hints = new Map<string, Map<TraceId, number>>();
+  const transactions = new Map<string, Map<TraceId, number>>();
 
   const trace = (traceId: TraceId): Map<string, JourneyItem> => {
     const existing = traces.get(traceId);
@@ -44,6 +45,7 @@ export function createMemoryBuffer(): JourneyBuffer {
     async delete(traceId) {
       traces.delete(traceId);
       for (const entries of hints.values()) entries.delete(traceId);
+      for (const entries of transactions.values()) entries.delete(traceId);
     },
     async indexHints(traceId, hintValues, atMs) {
       for (const key of hintKeys(hintValues)) {
@@ -51,6 +53,31 @@ export function createMemoryBuffer(): JourneyBuffer {
         entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
         hints.set(key, entries);
       }
+      if (hintValues.transactionId !== undefined) {
+        const key = `${hintValues.tenant ?? ""}:${hintValues.transactionId}`;
+        const entries = transactions.get(key) ?? new Map<TraceId, number>();
+        entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
+        transactions.set(key, entries);
+      }
+    },
+    async findByTransaction(tenant, transactionId, windowMs, nowMs) {
+      const entries = transactions.get(`${tenant}:${transactionId}`);
+      if (entries === undefined) return null;
+
+      let best: TraceId | null = null;
+      let bestAt = -1;
+      for (const [traceId, atMs] of entries) {
+        if (Math.abs(nowMs - atMs) > windowMs) continue;
+        if (
+          atMs > bestAt ||
+          (atMs === bestAt &&
+            (best === null || compareStrings(traceId, best) < 0))
+        ) {
+          best = traceId;
+          bestAt = atMs;
+        }
+      }
+      return best;
     },
     async findCandidates(hintValues, windowMs, nowMs) {
       const scores = new Map<TraceId, number>();
@@ -76,6 +103,11 @@ export function createMemoryBuffer(): JourneyBuffer {
         }
       }
       for (const entries of hints.values()) {
+        for (const [traceId, atMs] of entries) {
+          if (atMs < beforeMs) entries.delete(traceId);
+        }
+      }
+      for (const entries of transactions.values()) {
         for (const [traceId, atMs] of entries) {
           if (atMs < beforeMs) entries.delete(traceId);
         }

@@ -86,6 +86,7 @@ const hintsOf = (
 ): CorrelationHints => {
   const userHash = attributes["auth.user.hash"];
   const clientId = attributes["auth.client_id"];
+  const transactionId = attributes["auth.transaction.id"];
   const rawUser = attributes.user_id;
   return {
     ...(tenant === undefined ? {} : { tenant }),
@@ -94,6 +95,7 @@ const hintsOf = (
       ? { userHash: hashUser(rawUser, salt) }
       : {}),
     ...(typeof clientId === "string" ? { clientId } : {}),
+    ...(typeof transactionId === "string" ? { transactionId } : {}),
   };
 };
 
@@ -211,13 +213,15 @@ export function createStitcher(options: StitcherOptions): Stitcher {
   async function appendEvent(
     traceId: TraceId,
     event: ProviderEvent,
+    exact = false,
   ): Promise<void> {
     if (!takeSlot(traceId)) return;
+    const stored = exact ? { ...event, traceId } : event;
     await options.buffer.append(traceId, {
       kind: "event",
       id: `event:${event.id}`,
       atMs: event.atMs,
-      event,
+      event: stored,
     });
     await scheduleFinalise(traceId, event.atMs);
   }
@@ -244,10 +248,19 @@ export function createStitcher(options: StitcherOptions): Stitcher {
     for (let index = pending.length - 1; index >= 0; index--) {
       const entry = pending[index];
       if (entry === undefined) continue;
-      if (!matching(entry.event, hints, correlationWindowMs, atMs)) continue;
+
+      const exact =
+        entry.event.tenant === hints.tenant &&
+        entry.event.hints.transactionId !== undefined &&
+        entry.event.hints.transactionId === hints.transactionId &&
+        Math.abs(entry.event.atMs - atMs) <= correlationWindowMs;
+      if (!exact && !matching(entry.event, hints, correlationWindowMs, atMs)) {
+        continue;
+      }
+
       pending.splice(index, 1);
       pendingBytes -= entry.bytes;
-      await appendEvent(traceId, entry.event);
+      await appendEvent(traceId, entry.event, exact);
     }
   }
 
@@ -400,6 +413,19 @@ export function createStitcher(options: StitcherOptions): Stitcher {
       if (clean.traceId !== undefined) {
         await appendEvent(clean.traceId, clean);
         return;
+      }
+
+      if (clean.hints.transactionId !== undefined) {
+        const exact = await options.buffer.findByTransaction(
+          clean.tenant,
+          clean.hints.transactionId,
+          correlationWindowMs,
+          clean.atMs,
+        );
+        if (exact !== null) {
+          await appendEvent(exact, clean, true);
+          return;
+        }
       }
 
       const candidates = await options.buffer.findCandidates(

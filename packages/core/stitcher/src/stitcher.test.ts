@@ -259,6 +259,120 @@ describe("stitcher", () => {
     expect(stitcher.flush()).toHaveLength(1);
   });
 
+  it("joins by transaction exactly when no user hash is shared", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("aaaaaaaaaaaaaaaa"),
+        name: "auth.app.login_start",
+        startMs: NOW,
+        attributes: {
+          "auth.provider": "fake",
+          "auth.tenant": "acme",
+          "auth.transaction.id": "tx-1",
+        },
+      }),
+      tenant,
+    );
+    await stitcher.ingestEvent(
+      {
+        id: "evt_tx",
+        provider: "fake",
+        tenant: "acme",
+        type: "login_success",
+        atMs: NOW + 10,
+        hints: {},
+        attributes: { "auth.transaction.id": "tx-1" },
+      },
+      tenant,
+    );
+
+    await stitcher.runDue(NOW + 5000);
+    const wide = stitcher.flush()[0]?.wideEvent;
+    expect(wide?.outcome).toBe("success");
+    expect(wide?.correlationCounts).toEqual({ exact: 1, inferred: 0 });
+  });
+
+  it("adopts a transaction event that arrived before the span", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestEvent(
+      {
+        id: "evt_pending_tx",
+        provider: "fake",
+        tenant: "acme",
+        type: "login_failure",
+        atMs: NOW,
+        hints: {},
+        attributes: { "auth.transaction.id": "tx-2" },
+      },
+      tenant,
+    );
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("bbbbbbbbbbbbbbbb"),
+        name: "auth.app.login_start",
+        startMs: NOW + 1,
+        attributes: {
+          "auth.provider": "fake",
+          "auth.tenant": "acme",
+          "auth.transaction.id": "tx-2",
+        },
+      }),
+      tenant,
+    );
+
+    await stitcher.runDue(NOW + 5000);
+    const wide = stitcher.flush()[0]?.wideEvent;
+    expect(wide?.outcome).toBe("failed");
+    expect(wide?.correlationCounts).toEqual({ exact: 1, inferred: 0 });
+  });
+
+  it("treats a failure and a later success in one transaction as success", async () => {
+    const stitcher = spawn();
+    await stitcher.ingestEvent(
+      {
+        id: "evt_retry_fail",
+        provider: "fake",
+        tenant: "acme",
+        type: "login_failure",
+        atMs: NOW,
+        hints: {},
+        attributes: { "auth.transaction.id": "tx-3" },
+      },
+      tenant,
+    );
+    await stitcher.ingestEvent(
+      {
+        id: "evt_retry_success",
+        provider: "fake",
+        tenant: "acme",
+        type: "login_success",
+        atMs: NOW + 100,
+        hints: {},
+        attributes: { "auth.transaction.id": "tx-3" },
+      },
+      tenant,
+    );
+    await stitcher.ingestSpan(
+      span({
+        spanId: parseSpanId("cccccccccccccccc"),
+        name: "auth.app.login_start",
+        startMs: NOW + 200,
+        attributes: {
+          "auth.provider": "fake",
+          "auth.tenant": "acme",
+          "auth.transaction.id": "tx-3",
+        },
+      }),
+      tenant,
+    );
+
+    await stitcher.runDue(NOW + 5000);
+    const wide = stitcher.flush()[0]?.wideEvent;
+    expect(wide?.outcome).toBe("success");
+    expect(wide?.correlationCounts).toEqual({ exact: 2, inferred: 0 });
+  });
+
   it("survives a sink that throws", async () => {
     const failing = createStitcher({
       providers: [adapter],

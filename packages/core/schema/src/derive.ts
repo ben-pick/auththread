@@ -15,13 +15,6 @@ import type { JoinedEvent, Journey, ProviderEvent } from "./journey.ts";
 import { sha256Hex } from "./sha256.ts";
 import { isErrorSpan, type Span, type SpanStatus } from "./span.ts";
 
-const SEVERITY: Record<Outcome, number> = {
-  success: 0,
-  abandoned: 1,
-  failed: 2,
-  denied: 3,
-};
-
 const ROOT_ATTRIBUTE_KEYS = [
   "auth.provider",
   "auth.tenant",
@@ -50,38 +43,52 @@ export function deriveOutcome(
   spans: readonly Span[],
   events: readonly ProviderEvent[],
 ): Outcome {
-  const explicit = spans
-    .map((span) => span.attributes["auth.outcome"])
-    .filter(isOutcome)
-    .sort((a, b) => SEVERITY[b] - SEVERITY[a]);
-  if (explicit[0] !== undefined) return explicit[0];
-
-  const denied = spans.some(
-    (span) => span.attributes["auth.hook.decision"] === "deny",
-  );
-  if (denied) return "denied";
-
-  const failed =
-    spans.some(isErrorSpan) ||
-    events.some(
-      (event) =>
-        event.type === "login_failure" || event.type === "signup_failure",
-    );
-  if (failed) return "failed";
-
-  const abandoned = spans.some(
-    (span) => span.attributes["auth.abandoned_at"] !== undefined,
-  );
-  if (abandoned) return "abandoned";
-
-  const succeeded =
-    events.some((event) => event.type === "login_success") ||
+  if (
     spans.some(
-      (span) => span.name === SPAN_NAMES.callback && span.status.code === "ok",
-    );
-  if (succeeded) return "success";
+      (span) =>
+        span.attributes["auth.hook.decision"] === "deny" ||
+        span.attributes["auth.outcome"] === "denied",
+    )
+  ) {
+    return "denied";
+  }
 
-  return "abandoned";
+  const signals: Array<{
+    outcome: "success" | "failed" | "abandoned";
+    at: number;
+  }> = [];
+
+  for (const span of spans) {
+    const at = span.startMs + span.durationMs;
+    const explicit = span.attributes["auth.outcome"];
+    if (isOutcome(explicit) && explicit !== "denied") {
+      signals.push({ outcome: explicit, at });
+    }
+    if (isErrorSpan(span)) signals.push({ outcome: "failed", at });
+    if (span.attributes["auth.abandoned_at"] !== undefined) {
+      signals.push({ outcome: "abandoned", at });
+    }
+    if (span.name === SPAN_NAMES.callback && span.status.code === "ok") {
+      signals.push({ outcome: "success", at });
+    }
+  }
+
+  for (const event of events) {
+    if (event.type === "login_failure" || event.type === "signup_failure") {
+      signals.push({ outcome: "failed", at: event.atMs });
+    }
+    if (event.type === "login_success" || event.type === "signup_success") {
+      signals.push({ outcome: "success", at: event.atMs });
+    }
+  }
+
+  if (signals.length === 0) return "abandoned";
+
+  const rank = (outcome: "success" | "failed" | "abandoned"): number =>
+    outcome === "failed" ? 2 : outcome === "success" ? 1 : 0;
+
+  signals.sort((a, b) => b.at - a.at || rank(b.outcome) - rank(a.outcome));
+  return (signals[0] as { outcome: Outcome }).outcome;
 }
 
 export function deriveKind(

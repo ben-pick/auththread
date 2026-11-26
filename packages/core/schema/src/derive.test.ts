@@ -93,6 +93,52 @@ describe("deriveOutcome", () => {
     });
     expect(deriveOutcome([loginStart, abandoned], [])).toBe("abandoned");
   });
+
+  it("lets a later success override an earlier failure", () => {
+    const failure = span({
+      spanId: parseSpanId("9999999999999999"),
+      name: "auth.app.callback",
+      startMs: at,
+      status: { code: "error" },
+      attributes: { "auth.error.code": "invalid_password" },
+    });
+    expect(
+      deriveOutcome(
+        [loginStart, failure, callback],
+        [
+          event({ type: "login_failure", atMs: at + 10 }),
+          event({ type: "login_success", atMs: at + 1200 }),
+        ],
+      ),
+    ).toBe("success");
+  });
+
+  it("lets a later failure override an earlier success", () => {
+    expect(
+      deriveOutcome(
+        [loginStart, callback],
+        [
+          event({ type: "login_success", atMs: at + 10 }),
+          event({ type: "login_failure", atMs: at + 1200 }),
+        ],
+      ),
+    ).toBe("failed");
+  });
+
+  it("keeps a denial terminal", () => {
+    const deny = span({
+      spanId: parseSpanId("aaaaaaaaaaaaaaaa"),
+      name: "auth.hook.execute",
+      startMs: at + 10,
+      attributes: { "auth.hook.decision": "deny" },
+    });
+    expect(
+      deriveOutcome(
+        [loginStart, deny, callback],
+        [event({ type: "login_success", atMs: at + 1200 })],
+      ),
+    ).toBe("denied");
+  });
 });
 
 describe("buildJourney", () => {

@@ -24,6 +24,11 @@ export interface DurableObjectStateLike {
 const itemKey = (traceId: TraceId, id: string): string => `j:${traceId}:${id}`;
 const hintKey = (key: string, traceId: TraceId): string =>
   `h:${key}:${traceId}`;
+const transactionKey = (
+  tenant: string,
+  transactionId: string,
+  traceId: TraceId,
+): string => `x:${tenant}:${transactionId}:${traceId}`;
 const alarmKey = (traceId: TraceId): string => `a:${traceId}`;
 
 const traceOfItemKey = (key: string): TraceId | null => {
@@ -39,6 +44,12 @@ export function createDurableObjectBuffer(
     for (const key of items.keys()) await storage.delete(key);
     const hints = await storage.list<{ atMs: number }>({ prefix: "h:" });
     for (const key of hints.keys()) {
+      if (key.endsWith(`:${traceId}`)) await storage.delete(key);
+    }
+    const transactions = await storage.list<{ atMs: number }>({
+      prefix: "x:",
+    });
+    for (const key of transactions.keys()) {
       if (key.endsWith(`:${traceId}`)) await storage.delete(key);
     }
   };
@@ -64,6 +75,37 @@ export function createDurableObjectBuffer(
           atMs: Math.max(existing?.atMs ?? 0, atMs),
         });
       }
+      if (hints.transactionId !== undefined) {
+        const storageKey = transactionKey(
+          hints.tenant ?? "",
+          hints.transactionId,
+          traceId,
+        );
+        const existing = await storage.get<{ atMs: number }>(storageKey);
+        await storage.put(storageKey, {
+          atMs: Math.max(existing?.atMs ?? 0, atMs),
+        });
+      }
+    },
+    async findByTransaction(tenant, transactionId, windowMs, nowMs) {
+      const prefix = `x:${tenant}:${transactionId}:`;
+      const entries = await storage.list<{ atMs: number }>({ prefix });
+
+      let best: TraceId | null = null;
+      let bestAt = -1;
+      for (const [key, entry] of entries) {
+        if (Math.abs(nowMs - entry.atMs) > windowMs) continue;
+        const traceId = key.slice(prefix.length) as TraceId;
+        if (
+          entry.atMs > bestAt ||
+          (entry.atMs === bestAt &&
+            (best === null || compareStrings(traceId, best) < 0))
+        ) {
+          best = traceId;
+          bestAt = entry.atMs;
+        }
+      }
+      return best;
     },
     async findCandidates(hints, windowMs, nowMs) {
       const scores = new Map<TraceId, number>();

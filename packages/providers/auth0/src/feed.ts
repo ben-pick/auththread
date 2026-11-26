@@ -94,6 +94,10 @@ export function parseLogStream(
       typeof log.client_id === "string" ? log.client_id : undefined;
     const connection =
       typeof log.connection === "string" ? log.connection : undefined;
+    const transactionId =
+      typeof details.transaction_id === "string"
+        ? details.transaction_id
+        : undefined;
     const neutral = NEUTRAL_TYPE[type] ?? "provider_event";
     const kind = neutral.startsWith("signup_") ? "signup" : undefined;
     const traceId = readTraceId(details);
@@ -119,6 +123,9 @@ export function parseLogStream(
           ...(connection === undefined
             ? {}
             : { "auth.method.vendor_name": connection }),
+          ...(transactionId === undefined
+            ? {}
+            : { "auth.transaction.id": transactionId }),
           ...(userId === undefined
             ? {}
             : { "auth.user.hash": context.hashUser(userId) }),

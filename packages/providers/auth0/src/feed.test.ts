@@ -80,6 +80,14 @@ describe("parseLogStream", () => {
     expect(event?.attributes["auth.error.vendor_code"]).toBe("fp");
   });
 
+  it("keeps the transaction ID for an exact join", () => {
+    const [event] = parseLogStream(
+      log({ details: { transaction_id: "tx_1" } }),
+      { hashUser },
+    );
+    expect(event?.attributes["auth.transaction.id"]).toBe("tx_1");
+  });
+
   it("accepts arrays and batches, and skips malformed entries", () => {
     expect(
       parseLogStream([log(), log({ log_id: "other" })], { hashUser }),

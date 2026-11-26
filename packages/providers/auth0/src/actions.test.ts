@@ -78,7 +78,10 @@ describe("withTrace", () => {
 
     await expect(
       wrapped(
-        { request: { query: { ext_trace_id: TRACE } } },
+        {
+          request: { query: { ext_trace_id: TRACE } },
+          transaction: { id: "tx_action" },
+        },
         { idToken: { setCustomClaim: () => undefined } },
       ),
     ).resolves.toBe("ok");
@@ -88,6 +91,7 @@ describe("withTrace", () => {
     };
     expect(body.spans[0]?.name).toBe("auth.hook.execute");
     expect(body.spans[0]?.attributes).toMatchObject({
+      "auth.transaction.id": "tx_action",
       "auth.hook.name": "enrich-profile",
       "auth.hook.version": "v7",
       "auth.hook.stage": "post_auth",

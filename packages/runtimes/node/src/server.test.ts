@@ -21,6 +21,7 @@ describe("node scheduler", () => {
       fixture: {
         traceId: fixture.traceId,
         otherTraceId: "b7".repeat(16) as typeof fixture.traceId,
+        tenant: "acme",
         spans: fixture.spans,
         nowMs: fixture.nowMs,
       },

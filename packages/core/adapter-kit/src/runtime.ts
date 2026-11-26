@@ -29,6 +29,13 @@ export interface JourneyBuffer {
     hints: CorrelationHints,
     atMs: number,
   ): Promise<void>;
+  /** Exact lookup by an opaque transaction identifier, scoped by tenant. */
+  findByTransaction(
+    tenant: string,
+    transactionId: string,
+    windowMs: number,
+    nowMs: number,
+  ): Promise<TraceId | null>;
   findCandidates(
     hints: CorrelationHints,
     windowMs: number,

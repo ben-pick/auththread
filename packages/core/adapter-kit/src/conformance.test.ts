@@ -30,6 +30,7 @@ describe("runtime conformance", () => {
       fixture: {
         traceId: fixture.traceId,
         otherTraceId: parseTraceId("d4".repeat(16)),
+        tenant: "acme",
         spans: fixture.spans,
         nowMs: fixture.nowMs,
       },
@@ -46,6 +47,7 @@ describe("runtime conformance", () => {
       fixture: {
         traceId: fixture.traceId,
         otherTraceId: parseTraceId("d4".repeat(16)),
+        tenant: "acme",
         spans: fixture.spans,
         nowMs: fixture.nowMs,
       },

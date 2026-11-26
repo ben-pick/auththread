@@ -13,6 +13,8 @@ export interface CorrelationHints {
   readonly clientId?: string;
   readonly ipHash?: string;
   readonly userAgentHash?: string;
+  /** Opaque per-transaction identifier. An exact join, not a hint. */
+  readonly transactionId?: string;
   /** Scopes the hint index so one tenant can never join another tenant's journey. */
   readonly tenant?: string;
 }

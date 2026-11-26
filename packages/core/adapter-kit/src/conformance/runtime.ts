@@ -6,6 +6,7 @@ import { checker } from "./report.ts";
 export interface RuntimeFixture {
   readonly traceId: TraceId;
   readonly otherTraceId: TraceId;
+  readonly tenant: string;
   readonly spans: readonly Span[];
   readonly nowMs: number;
 }
@@ -105,6 +106,48 @@ export async function runRuntimeConformance(
     (await buffer.findCandidates({ userHash: "u_none" }, 2000, fixture.nowMs))
       .length === 0,
     "an unknown hint found a candidate",
+  );
+
+  await buffer.indexHints(
+    fixture.traceId,
+    { tenant: fixture.tenant, transactionId: "tx_1" },
+    fixture.nowMs,
+  );
+  result.check(
+    (await buffer.findByTransaction(
+      fixture.tenant,
+      "tx_1",
+      2000,
+      fixture.nowMs + 1000,
+    )) === fixture.traceId,
+    "a transaction inside the window found no trace",
+  );
+  result.check(
+    (await buffer.findByTransaction(
+      fixture.tenant,
+      "tx_1",
+      2000,
+      fixture.nowMs + 5000,
+    )) === null,
+    "a transaction outside the window still found a trace",
+  );
+  result.check(
+    (await buffer.findByTransaction(
+      fixture.tenant,
+      "tx_missing",
+      2000,
+      fixture.nowMs,
+    )) === null,
+    "an unknown transaction found a trace",
+  );
+  result.check(
+    (await buffer.findByTransaction(
+      `${fixture.tenant}-other`,
+      "tx_1",
+      2000,
+      fixture.nowMs,
+    )) === null,
+    "a transaction lookup crossed tenants",
   );
 
   const fired: TraceId[] = [];

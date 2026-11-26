@@ -81,6 +81,12 @@ const traceIdOf = (event: unknown) => {
     : undefined;
 };
 
+const transactionIdOf = (event: unknown): string | undefined => {
+  const candidate = event as { transaction?: { id?: unknown } };
+  const raw = candidate.transaction?.id;
+  return typeof raw === "string" && raw.length > 0 ? raw : undefined;
+};
+
 const decision = (recorded: Recorded): string => {
   if (recorded.denied) return "deny";
   if (recorded.redirect !== null) return "redirect";
@@ -117,8 +123,10 @@ export function withTrace<Event, Api, Result>(
     }
 
     const traceId = traceIdOf(event);
+    const transactionId = transactionIdOf(event);
     const payload = {
       traceId: traceId ?? null,
+      transactionId: transactionId ?? null,
       hook: { name: options.name, version: options.version },
       startedAt,
       durationMs: Date.now() - startedAt,
@@ -146,6 +154,9 @@ export function withTrace<Event, Api, Result>(
           attributes: {
             "auth.provider": "auth0",
             "auth.journey.kind": options.kind ?? "login",
+            ...(transactionId === undefined
+              ? {}
+              : { "auth.transaction.id": transactionId }),
             "auth.hook.name": options.name,
             "auth.hook.type": "auth0.action",
             "auth.hook.version": options.version,

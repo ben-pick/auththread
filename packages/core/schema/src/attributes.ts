@@ -5,6 +5,7 @@ export const NEUTRAL_ATTRIBUTES = [
   "auth.tenant",
   "auth.client_id",
   "auth.journey.kind",
+  "auth.transaction.id",
   "auth.user.hash",
   "auth.method",
   "auth.method.vendor_name",
