@@ -1,73 +1,98 @@
 # Auth0 log correlation research
 
-Date: 26 November 2026. Sources: the Auth0 tenant log OpenAPI schema, custom log stream
-docs, and the post-login event object docs.
+Date: 26 November 2026. Researched with the Auth0 Docs MCP server, which is now configured
+globally in `~/.config/opencode/opencode.json` as `auth0-docs`.
+
+Sources: the tenant log OpenAPI schema, the Management API reference, the custom log stream
+docs, and the post-login event object.
 
 ## Question
 
-Can a customer attach a value such as the auththread trace ID to an Auth0 tenant log event,
-so a Log Stream item carries the same trace ID as the browser and the Action?
+Can a customer attach a value such as the auththread trace ID to an Auth0 login log event, so
+a Log Stream item carries the same trace ID as the browser and the Action?
 
 ## Short answer
 
-No customer-supplied metadata is supported. There is no custom field, no extra parameter and
-no header that Auth0 echoes into the stream. `ext-trace_id` is readable from the page template
-and `event.request.query` in a post-login Action, but it is not part of the log event.
+No customer-supplied metadata is supported on login events. There is no custom field and no
+header that `/authorize` echoes into the stream.
 
-However, the published log schema now carries correlation fields that the plan did not assume.
-The feed is not necessarily hint-only.
+There is one customer-supplied correlation field, but it applies only to Management API
+operations. The Management API accepts `X-Correlation-ID` on `POST`, `PUT`, `PATCH` and
+`DELETE`, up to 64 characters, and shows it as `references.correlation_id` in that operation's
+log event. Login events do not go through the Management API.
 
-## What the schema carries
+The login event is not hint-only, though. The log schema and the post-login Action object share
+two server-generated identifiers, and one of them looks like an exact join.
 
-From https://auth0.com/docs/oas/tenant-logs/logs-schema.json, schema `s` (successful login):
+## The likely exact join: transaction ID
 
-| Field | Meaning | Customer controlled |
+| Side | Field | Documentation |
 | --- | --- | --- |
-| `references.trace_id` | W3C trace ID, 32 hex, for distributed traces | No documented mechanism |
-| `references.request_id` | Per-request identifier from the originating service | No |
-| `references.correlation_id` | Correlation ID across services | No |
-| `details.transaction_id` | Correlates log events in one authentication transaction | No |
-| `details.session_id` | Session identifier | No |
-| `details.actions.executions[]` | Action execution IDs, retrievable through the Management API | No |
+| Post-login Action | `event.transaction.id` | "Unique identifier for the transaction. Populated for all browser-based login flows." |
+| Tenant log event | `details.transaction_id` | "Transaction ID to correlate log events that belong to the same authentication transaction." |
 
-The same references object appears on every event type. `references` is optional on `s`.
+The transaction is per login attempt, which matches one journey per attempt. If the two values
+are equal, the Action can emit a salted hash and the stitcher can join the feed event exactly
+on tenant plus transaction hash. No `ext-` parameter is involved.
 
-## What this means
+The docs do not state that the values are identical. That needs one real-tenant measurement.
 
-- `references.trace_id` is not ours unless Auth0 propagates an inbound W3C trace context. The
-  browser cannot set `traceparent` on a top-level redirect. A backend using PAR might be able
-  to, but nothing in the docs says Auth0 honours it. Treat this as Auth0's trace, not the
-  journey's.
-- `details.session_id` is promising. Post-login Actions have `event.session.id`. If the two
-  values match, the Action can emit a salted hash of the session ID and the stitcher can join
-  the log event exactly, with no `ext-` parameter involved.
-- `details.actions.executions[]` is also promising. The Management API get-execution endpoint
-  retrieves execution details by ID. If those details include the Action's input event, they
-  contain `request.query.ext_trace_id`, which is an exact join at the cost of one Management
-  API call per event. This also revises the earlier assumption that Action execution details
-  are absent from Log Streams. The IDs are present. The details need a fetch.
-- `details.transaction_id` has no matching field in the documented post-login event object.
-  `event.transaction.linking_id` exists only for decoupled authorization flows, so it is not a
-  general join key.
+## The second candidate: session ID
 
-## Experiment before changing the adapter
+| Side | Field | Documentation |
+| --- | --- | --- |
+| Post-login Action | `event.session.id` | "The ID of the current session." |
+| Tenant log event | `details.session_id` | Present in the schema, no description |
 
-On a real tenant, run one successful login and one failed login and capture both sides:
+A session can span several logins, so a session join is weaker than a transaction join for
+one-journey-per-attempt. Use it as a fallback, not the primary key.
 
-1. Log `event.session.id` in the post-login Action.
-2. Capture the streamed log event and read `details.session_id` and
-   `details.actions.executions`.
-3. Compare the session values. If they match, add `auth.session.hash` (salted, never raw) and
-   join on it. That replaces most hint joins for Auth0.
-4. If they do not match, call the Management API get-execution endpoint for one execution ID
-   and check whether the Action input, including `request.query.ext_trace_id`, is present.
+## What about Action execution IDs
 
-Until that experiment runs, the hint join stays. It is correct, but it joins on user hash and
-tenant, and the session path may be exact.
+Login events can include `details.actions.executions[]`, a list of execution IDs. The
+Management API get-execution endpoint retrieves one, for 10 days. Its response contains, per
+action:
+
+- `action_name`
+- `error`
+- `started_at`
+- `ended_at`
+
+It does not include the Action input event, so it cannot recover `event.request.query.ext_trace_id`.
+It is useful for enriching a hook's name, error and duration without our wrapper, but it is not
+a correlation path to our trace.
+
+This does revise an older assumption. Action execution IDs are in Log Streams. Full execution
+details are one Management API call away. Neither carries the trace ID.
+
+## What about references.trace_id
+
+The schema describes `references.trace_id` as a W3C trace ID (32 hex) for distributed traces.
+Nothing documents how it is populated or how to supply one. `traceparent` appears in the
+MyAccount API docs, not in the login or log stream docs. The browser cannot send a `traceparent`
+header on a top-level redirect. Treat this as Auth0's internal trace until proven otherwise.
+
+## What this means for auththread
+
+`ext-trace_id` remains the only customer-controlled value that survives `/authorize` into the
+page and the post-login Action. It still does not appear in the log event.
+
+The feed can become exact without it:
+
+1. On a real tenant, log in once with an Action that records `event.transaction.id`.
+2. Capture the streamed event and compare `details.transaction_id`.
+3. If equal, add `auth.transaction.hash` (salted, never raw) to the hook span and the feed
+   event, and join on it.
+4. If they differ, repeat for `event.session.id` and `details.session_id`.
+5. If both fail, the tenant's events predate these fields and hints remain.
+
+Until that measurement runs, the hint join stays. It is correct, but it is probabilistic where
+an exact join may exist.
 
 ## Sources
 
 - Tenant log schema: https://auth0.com/docs/oas/tenant-logs/logs-schema.json
+- Management API request correlation: https://auth0.com/docs/api/management/v2
+- Get an execution: https://auth0.com/docs/api/management/v2/actions/get-execution
 - Custom log streams: https://auth0.com/docs/customize/log-streams/custom-log-streams
 - Post-login event object: https://auth0.com/docs/actions/reference/post-login/post-login-event-object
-- Sessions with Actions: https://auth0.com/docs/manage-users/sessions/manage-sessions-actions
