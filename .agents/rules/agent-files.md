@@ -15,3 +15,7 @@ paths:
   edit them. Run `pnpm agents:index`.
 - `pnpm agents:check` fails on a stale index, a broken relative link, an ADR without a
   title, or a tracked file that looks like it contains a secret.
+- Files under `.agents/skills/<name>` with an entry in `.agents/skills/vendor.lock.json`
+  are third-party copies. Never hand-edit them; run `pnpm skills:update`. They are exempt
+  from relative-link checks (upstream links to sibling skills we do not vendor) but still
+  scanned for secrets.

@@ -8,6 +8,13 @@
   },
   "scripts": {
     "check": "node src/cli.ts check",
-    "index": "node src/cli.ts index"
+    "index": "node src/cli.ts index",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

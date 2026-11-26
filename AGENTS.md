@@ -29,6 +29,33 @@ tool the team already uses.
 - Core never imports a provider, runtime or sink. `pnpm boundaries` enforces it.
 - Conformance defines support. An adapter without a green suite is experimental (ADR-0004).
 
+## Skills
+
+Load the skill that matches the task. Repo rules, ADRs and this file win over vendored skills.
+
+Repo-authored workflow skills live in `.agents/skills/`:
+
+- `learn` — after a correction, a non-obvious fact or a repeated workflow; capture it in
+  `.agents/learnings/inbox.md` and promote it to the narrowest home.
+- `write-adr` — when choosing an option or setting a cross-package convention; write an
+  outcome ADR and regenerate the index.
+- `review-against-rules` — when reviewing a diff or before opening a PR; report findings as
+  `path:line — rule — problem — fix`.
+- `write-pr` — when writing or updating a PR description; fill the template verbatim.
+- `add-vendor-skill` — when adding or updating a third-party skill; pin it, lock it, check it.
+
+Vendored skills are pinned copies (ADR-0011):
+
+- `cloudflare` — picking Cloudflare products and architecture before a Worker skill.
+- `workers-best-practices` — writing, reviewing or configuring Workers.
+- `durable-objects` — building, debugging or reviewing Durable Object state and coordination.
+- `wrangler` — local dev, config and deploy commands for a Workers project.
+- `workers-profiling` — profiling CPU and memory in a deployed Worker or Durable Object.
+- `turborepo` — task pipelines, caching, filtering and CI configuration.
+
+auththread uses the pinned `wrangler` from the pnpm catalog. The `cf` CLI guidance in the
+vendored Cloudflare skills applies to projects without a Wrangler config, not here.
+
 ## Rules index
 
 Read the matching rule before editing those files.
