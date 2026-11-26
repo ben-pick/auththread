@@ -51,6 +51,13 @@ export function createJourneyDurableObject(
 
     async alarm(): Promise<void> {
       await this.scheduler.alarm();
+      for (const sink of options.sinks) {
+        try {
+          await sink.flush?.();
+        } catch (error) {
+          options.onError?.(error);
+        }
+      }
     }
   };
 }

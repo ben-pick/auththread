@@ -15,6 +15,7 @@ const skip = new Set([
   ".turbo",
   "coverage",
   ".wrangler",
+  ".vitest-cache",
 ]);
 
 const walk = (dir: string, out: string[] = []): string[] => {

@@ -58,6 +58,8 @@ export interface Sink {
   render(journey: Journey): SinkBatch | null;
   /** Must be safe to retry with the same batch. */
   write(batch: SinkBatch): Promise<void>;
+  /** Flush any internal buffer. Called by runtimes on shutdown or before eviction. */
+  flush?(): Promise<void>;
   /** The key a receiver de-duplicates on. Defaults to the journey ID. */
   idempotencyKey?(batch: SinkBatch): string;
 }

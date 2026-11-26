@@ -147,9 +147,20 @@ export function createNodeServer(options: NodeServerOptions): NodeServer {
     close() {
       scheduler.stop();
       return new Promise((resolve, reject) => {
-        server.close((error) =>
-          error === undefined ? resolve() : reject(error),
-        );
+        server.close(async (error) => {
+          if (error !== undefined) {
+            reject(error);
+            return;
+          }
+          for (const sink of options.sinks) {
+            try {
+              await sink.flush?.();
+            } catch (flushError) {
+              options.onError?.(flushError);
+            }
+          }
+          resolve();
+        });
       });
     },
   };
