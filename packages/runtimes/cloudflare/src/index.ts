@@ -1,3 +1,5 @@
+export type { DirectoryTenant, KeyDirectory } from "./directory.ts";
+export { createKeyDirectory } from "./directory.ts";
 export type {
   JourneyDurableObjectInstance,
   JourneyDurableObjectOptions,

@@ -6,7 +6,11 @@ import {
 import { type Auth0FeedSettings, auth0Adapter } from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
 import { createOtlpExporter } from "@auththread/otlp";
-import { createJourneyDurableObject } from "@auththread/runtime-cloudflare";
+import {
+  createJourneyDurableObject,
+  createKeyDirectory,
+  type KeyDirectory,
+} from "@auththread/runtime-cloudflare";
 import { sha256Hex } from "@auththread/schema";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWideEventSink } from "@auththread/sink-wide-event";
@@ -95,9 +99,47 @@ export class JourneyDurableObject {
   }
 }
 
+const CORS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers":
+    "authorization, content-type, x-auththread-key",
+  "access-control-max-age": "86400",
+};
+
+let cached: { source: string; directory: KeyDirectory } | null = null;
+
+const directoryFor = (source: string): KeyDirectory => {
+  if (cached?.source === source) return cached.directory;
+  const config = parseTenants(source);
+  const directory = createKeyDirectory(
+    config.tenants.map((tenant) => ({
+      tenant: tenant.tenant,
+      apiKey: tenant.apiKey,
+    })),
+  );
+  cached = { source, directory };
+  return directory;
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const id = env.JOURNEY.idFromName("default");
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS });
+    }
+    if (new URL(request.url).pathname === "/healthz") {
+      return Response.json({ ok: true });
+    }
+
+    const tenant = await directoryFor(env.AUTHTHREAD_TENANTS).resolve(request);
+    if (tenant === null) {
+      return Response.json(
+        { error: "unauthorized" },
+        { status: 401, headers: CORS },
+      );
+    }
+
+    const id = env.JOURNEY.idFromName(tenant);
     return env.JOURNEY.get(id).fetch(request);
   },
 };
