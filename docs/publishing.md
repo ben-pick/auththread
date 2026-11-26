@@ -42,11 +42,55 @@ when community adapters exist.
    local publish, use `npm login` or export `NPM_TOKEN` and add it to your
    user-level `~/.npmrc`.
 5. After the packages exist, configure npm trusted publishing for each package
-   (GitHub Actions, repository `ben-pick/auththread`, workflow `release.yml`)
-   and remove the `NPM_TOKEN` secret and workflow env.
-6. Verify the provenance record on npm and the `repository.url` in each package.
-7. Tag the release train `vX.Y.Z` so the container workflow builds the matching
-   multi-arch image.
+   (GitHub Actions, repository `ben-pick/auththread`, workflow `release.yml`).
+   `npm trust` requires the package to exist, so this cannot replace the first
+   publish.
+6. Remove the `NPM_TOKEN` secret and workflow env. The release workflow keeps
+   `id-token: write`, and npm switches to OIDC automatically.
+7. Publish a patch release within two days to validate the new trusted
+   publisher; a new trusted-publisher configuration expires if it is not
+   validated by a successful publish within two days.
+8. Set each package's **Publishing access** to “Require two-factor
+   authentication and disallow tokens”.
+9. Verify the provenance record on npm and the `repository.url` in each package.
+10. Tag the release train `vX.Y.Z` so the container workflow builds the matching
+    multi-arch image.
+
+## Trusted publishing setup
+
+After the first publish, authenticate interactively with 2FA and configure each
+public package. Remove any token-based `_authToken` line from `~/.npmrc` and
+unset `NPM_TOKEN`/`NODE_AUTH_TOKEN` first: `npm trust` rejects granular tokens
+that bypass 2FA with a 403.
+
+```sh
+npm logout
+npm token revoke <token-id>   # revoke the one-time bootstrap token too
+npm login --auth-type=web
+npm whoami
+for package in \
+  @auththread/schema @auththread/otlp @auththread/adapter-kit \
+  @auththread/stitcher @auththread/browser @auththread/sdk \
+  @auththread/auth0 @auththread/auth0-actions @auththread/oidc \
+  @auththread/runtime-node @auththread/runtime-cloudflare \
+  @auththread/sink-otlp @auththread/sink-wide-event \
+  @auththread/sink-webhook @auththread/sink-object-store; do
+  npm trust github "$package" \
+    --repo ben-pick/auththread \
+    --file release.yml \
+    --allow-publish \
+    --yes
+  sleep 2
+done
+```
+
+`npm trust` requires npm 11.15 or newer, 2FA on the account, and the package to
+exist. The first command asks for 2FA; npm offers a five-minute skip window for
+the remaining packages.
+
+The workflow filename must match exactly. The trusted publisher is bound to the
+GitHub repository identity, so `repository.url` must stay
+`git+https://github.com/ben-pick/auththread.git`.
 
 ## Snapshots
 

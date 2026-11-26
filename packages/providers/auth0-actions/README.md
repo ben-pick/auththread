@@ -10,18 +10,23 @@ at the release version, then use `require`:
 ```js
 const { withTrace } = require("@auththread/auth0-actions");
 
-exports.onExecutePostLogin = withTrace(
-  {
-    name: "auththread",
-    version: "1",
-    transport: "http",
-    endpoint: "https://auth-telemetry.example.com",
-    token: event.secrets.AUTHTHREAD_KEY,
-  },
-  async (event, api) => {
-    // your existing Action body
-  },
-);
+exports.onExecutePostLogin = async (event, api) => {
+  const traced = withTrace(
+    {
+      name: "auththread",
+      version: "1",
+      transport: "http",
+      endpoint: "https://auth-telemetry.example.com",
+      // Auth0 secrets are only available on the event.
+      token: event.secrets.AUTHTHREAD_KEY,
+    },
+    async (event, api) => {
+      // your existing Action body
+    },
+  );
+
+  return traced(event, api);
+};
 ```
 
 The wrapper never throws from the tracing path and leaves the handler's result
