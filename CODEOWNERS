@@ -1,0 +1,8 @@
+# Default owners for everything in the repo.
+* @benpick
+
+# Adapter owners. An adapter without an owner for 90 days becomes experimental.
+/packages/providers/auth0/ @benpick
+/packages/providers/oidc/ @benpick
+/packages/runtimes/cloudflare/ @benpick
+/packages/runtimes/node/ @benpick

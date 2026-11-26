@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - ./packages/core/schema
+          - ./packages/core/otlp
+          - ./packages/core/adapter-kit
+          - ./packages/core/browser
+          - ./packages/core/stitcher
+          - ./packages/providers/oidc
+          - ./packages/providers/auth0
+          - ./packages/runtimes/node
+          - ./packages/runtimes/cloudflare
+          - ./packages/sinks/otlp
+          - ./packages/sinks/wide-event
+          - ./packages/sinks/webhook
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "${{ matrix.package }}" test
+
+  journey:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm demo > journey.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: journey
+          path: journey.jsonl

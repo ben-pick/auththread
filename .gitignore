@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+.vitest-cache/
+.wrangler/
+.dev.vars
+*.tsbuildinfo
+.DS_Store
+examples/keycloak-compose/web/app.js
