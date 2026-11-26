@@ -160,5 +160,5 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`Log stream URL: http://localhost:${PORT}/log-stream`);
   console.log(`Action URL:     http://localhost:${PORT}/action`);
   if (SECRET !== undefined)
-    console.log("Probe secret required in x-probe-secret");
+    console.log("Probe secret accepted in x-probe-secret or Authorization");
 });
