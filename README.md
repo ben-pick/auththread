@@ -117,9 +117,10 @@ instead of storing them. Secrets, tokens, OTPs, cookies and request bodies are n
 ## Development
 
 ```sh
-mise exec -- pnpm check   # typecheck, lint, tests, boundaries, agent files
+mise exec -- pnpm check   # typecheck, lint, tests, boundaries, agent files, budgets
 mise exec -- pnpm demo    # replay the corpus and print one journey
 mise exec -- pnpm smoke   # drive the real HTTP surface and assert one journey
+mise exec -- pnpm budget  # browser SDK and page snippet sizes
 ```
 
 `docs/verification.md` lists what v0.1 proved and what it did not.
