@@ -40,6 +40,9 @@ actionlint and the agent file checks. Current result: 21 test files, 105 tests, 
 - **The Keycloak compose stack was not executed.** Docker was unavailable in the environment
   that built v0.1. The compose file, realm import, page and bundle were written but not run.
   This is the first thing to run in CI or locally.
+- **The Node image was not built with Docker here.** Its install step was reproduced from a
+  clean copy with `CI=1 pnpm install --frozen-lockfile`, the budget script ran, and the server
+  answered `/healthz`. The image layers themselves are unverified.
 - **Hook latency under 50 ms at p95 is not measured.** It needs a real Auth0 tenant and an
   Action invocation. The wrapper has a 250 ms abort and never throws, which bounds the
   failure mode but is not a latency measurement.

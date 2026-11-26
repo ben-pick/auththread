@@ -3,7 +3,7 @@ WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages ./packages
-COPY examples/node-docker ./examples/node-docker
+COPY examples ./examples
 RUN pnpm install --frozen-lockfile
 
 FROM node:24-alpine
