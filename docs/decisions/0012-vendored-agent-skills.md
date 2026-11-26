@@ -1,5 +1,5 @@
 ---
-id: "0011"
+id: "0012"
 title: "Vendored agent skills are pinned copies with a lock and an offline check"
 scope:
   - ".agents/skills/**"
@@ -10,7 +10,7 @@ enforced-by:
   - "pnpm skills:update --check"
 ---
 
-# 0011. Vendored agent skills are pinned copies with a lock and an offline check
+# 0012. Vendored agent skills are pinned copies with a lock and an offline check
 
 ## Outcome
 

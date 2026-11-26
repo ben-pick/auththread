@@ -5,7 +5,7 @@ description: Use when adding, reviewing or updating a third-party agent skill (C
 
 # Add or update a vendored skill
 
-Third-party skills are pinned copies, never live installs (ADR-0011). Repo rules, ADRs and
+Third-party skills are pinned copies, never live installs (ADR-0012). Repo rules, ADRs and
 `AGENTS.md` win over them.
 
 ## Evaluate

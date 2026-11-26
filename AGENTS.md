@@ -44,7 +44,7 @@ Repo-authored workflow skills live in `.agents/skills/`:
 - `write-pr` — when writing or updating a PR description; fill the template verbatim.
 - `add-vendor-skill` — when adding or updating a third-party skill; pin it, lock it, check it.
 
-Vendored skills are pinned copies (ADR-0011):
+Vendored skills are pinned copies (ADR-0012):
 
 - `cloudflare` — picking Cloudflare products and architecture before a Worker skill.
 - `workers-best-practices` — writing, reviewing or configuring Workers.
