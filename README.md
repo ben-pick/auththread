@@ -1,6 +1,6 @@
 # auththread
 
-**See one login journey end to end, in the observability tool you already use.**
+**See one login journey end to end, in the observability/analytics tool you already use.**
 
 [![status](https://img.shields.io/badge/status-v0.1-1f6feb)](#roadmap)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
@@ -8,12 +8,10 @@
 [![otel](https://img.shields.io/badge/OpenTelemetry-optional-425CC7)](https://opentelemetry.io)
 
 Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
-one journey. It emits OTel spans, one wide event, or both. It is the instrumentation and the
-adapter framework, not a trace store.
+one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
+Auththread is the solution!
 
-> **Status: v0.1, early.** The packages are not published to npm yet. Use the workspace or
-> the examples. Deep integration is available for Auth0. Generic OIDC gets browser-level
-> tracing everywhere.
+> **Status: v0.1, early.** 
 
 ## Contents
 
@@ -41,7 +39,7 @@ A login crosses four systems that share nothing:
 - a provider event feed that arrives after the user is gone.
 
 Every provider has a different event model, so teams rebuild the glue per provider and again
-when they migrate. Auththread gives one neutral journey and one set of sinks, so the same
+when they migrate. Auththread gives one journey and one set of sinks, so the same
 dashboard works across providers.
 
 ## Quick start
@@ -49,7 +47,7 @@ dashboard works across providers.
 Requirements: [mise](https://mise.jdx.dev), Node 24 and pnpm 12. `mise install` provides the
 last two.
 
-### One journey in thirty seconds
+### Demo journey
 
 ```sh
 mise install
