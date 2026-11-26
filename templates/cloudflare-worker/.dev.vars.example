@@ -1,0 +1,4 @@
+AUTHTHREAD_TENANTS={"tenants":[{"tenant":"demo","provider":"oidc","apiKey":"at_replace_me","salt":"replace-with-a-long-random-salt"}]}
+# OTLP_ENDPOINT=https://otlp.example.com/v1/traces
+# OTLP_HEADERS={"authorization":"Bearer ..."}
+# AUTHTHREAD_QUIET_MS=600000

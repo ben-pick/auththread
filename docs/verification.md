@@ -21,6 +21,10 @@ actionlint and the agent file checks. The suite is green and `pnpm boundaries` i
   journeys.
 - **Redaction.** Tests cover secret keys, hashed identifiers, missing salt, email and JWT
   stripping, and assert raw identifiers never reach a sink.
+- **Publishable packages.** `pnpm build` emits `dist` JavaScript and declarations for every public package. `pnpm pack:check` packs all 15 public packages, rejects test files, source files, `workspace:`/`catalog:` protocols and `.ts` declaration imports, and runs `publint`.
+- **Server config boundary.** `apps/server` loads env through Effect Config and Schema, validates numeric ranges, JSON headers and all-or-nothing webhook/S3 groups, and fails before the HTTP server starts.
+- **Node image.** The Dockerfile builds a bundled ESM server, runs as a non-root user, and answers `/healthz`. The CI container job builds the image and smokes it.
+- **Deployment and local artifacts.** `examples/local-compose` and `templates/cloudflare-worker` carry the local demo and Cloudflare contracts. `pnpm template:check` verifies the Worker template contract and typechecks it against the workspace API.
 - **Bundle budgets.** `pnpm budget` runs in `pnpm check` and fails above either budget. The
   browser SDK is bundled alone, without demo app code, and must stay under 5 KB gzipped. The
   page snippet as shipped must stay under 8 KB. The Keycloak example app is measured and

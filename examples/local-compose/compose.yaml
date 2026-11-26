@@ -1,0 +1,31 @@
+services:
+  auththread:
+    image: ${AUTHTHREAD_IMAGE:-ghcr.io/ben-pick/auththread:0.1.0}
+    environment:
+      AUTHTHREAD_CONFIG: /etc/auththread/config.json
+      AUTHTHREAD_DB: /var/lib/auththread/state.db
+      AUTHTHREAD_QUIET_MS: ${AUTHTHREAD_QUIET_MS:-10000}
+      AUTHTHREAD_SAMPLE_SUCCESS: ${AUTHTHREAD_SAMPLE_SUCCESS:-1}
+      OTLP_ENDPOINT: ${OTLP_ENDPOINT:-http://lgtm:4318/v1/traces}
+      OTEL_SERVICE_NAME: auththread
+    volumes:
+      - ./config.json:/etc/auththread/config.json:ro
+      - auththread-data:/var/lib/auththread
+    ports:
+      - "${AUTHTHREAD_PORT:-8787}:8787"
+    depends_on:
+      lgtm:
+        condition: service_started
+    restart: unless-stopped
+
+  # Local collector + Grafana + Tempo/Loki. Replace with your own OTLP endpoint
+  # in production; this service is for the demo only.
+  lgtm:
+    image: grafana/otel-lgtm@sha256:93846d819bb09134ea4160addd08a6d081bdfc5379e80dae081b675257cee568
+    ports:
+      - "3000:3000"
+      - "4318:4318"
+    restart: unless-stopped
+
+volumes:
+  auththread-data:

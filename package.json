@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check && pnpm template:check",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -21,7 +21,13 @@
     "smoke": "node scripts/smoke.ts",
     "graph": "node packages/tooling/dep-graph/src/cli.ts",
     "probe:auth0": "node scripts/auth0-probe.ts",
-    "budget": "node packages/tooling/budget/src/cli.ts"
+    "budget": "node packages/tooling/budget/src/cli.ts",
+    "build": "turbo run build",
+    "pack:check": "node scripts/pack-check.ts",
+    "template:check": "node scripts/template-check.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && pnpm pack:check && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
@@ -31,7 +37,9 @@
     "effect": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@changesets/cli": "^3.0.3",
+    "publint": "^0.3.25"
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
@@ -40,6 +48,7 @@
     "@auththread/runtime-node": "workspace:*",
     "@auththread/schema": "workspace:*",
     "@auththread/sink-wide-event": "workspace:*",
-    "@auththread/stitcher": "workspace:*"
+    "@auththread/stitcher": "workspace:*",
+    "@auththread/sdk": "workspace:^"
   }
 }

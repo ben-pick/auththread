@@ -1,5 +1,9 @@
 # Node and Docker example
 
+> The canonical image entrypoint is now [`apps/server`](../../apps/server). The root
+> [`Dockerfile`](../../Dockerfile) builds and bundles it. This example remains a lower-level
+> composition demo using `createNodeServer`.
+
 Build from the repository root:
 
 ```sh

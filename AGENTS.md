@@ -13,15 +13,23 @@ tool the team already uses.
 - `packages/runtimes/*` are buffers, schedulers and servers. They take providers as input and
   expose Effect layers; the Node example runs them through `NodeRuntime.runMain`.
 - `packages/sinks/*` are outputs: OTLP, wide event, webhook.
+- `packages/sdk` is the server SDK facade. It may import platform runtimes.
 - `packages/tooling/*` is dev only.
-- `examples/*` composes packages into deployable units.
+- `apps/server` is the canonical bundled server image entrypoint.
+- `templates/*` are deployment artifacts. They consume the install contract, never
+  package internals, and are outside the pnpm workspace dependency graph.
+- `examples/*` composes packages into demos, including the local compose stack.
 - `docs/decisions/` holds ADRs. `INDEX.md` is generated.
 
 ## Verify
 
 - `mise exec -- pnpm check` runs typecheck, lint, tests, boundaries, bundle budgets and agent checks.
+- `mise exec -- pnpm build` emits `dist` for every public package.
+- `mise exec -- pnpm pack:check` packs every public package and checks its contents,
+  publishing protocols, declaration imports and publint.
 - `mise exec -- pnpm demo` replays the shared corpus and prints one wide event.
 - `mise exec -- pnpm smoke` drives the HTTP surface: auth, feed signature, join, sink.
+- `mise exec -- pnpm template:check` validates the deployment templates and typechecks the Worker template.
 - `mise exec -- pnpm budget` prints the browser SDK and page snippet sizes against their budgets.
 
 ## Invariants

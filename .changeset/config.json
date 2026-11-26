@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@auththread/schema",
+      "@auththread/otlp",
+      "@auththread/adapter-kit",
+      "@auththread/stitcher",
+      "@auththread/browser",
+      "@auththread/sdk",
+      "@auththread/auth0",
+      "@auththread/auth0-actions",
+      "@auththread/oidc",
+      "@auththread/runtime-node",
+      "@auththread/runtime-cloudflare",
+      "@auththread/sink-otlp",
+      "@auththread/sink-wide-event",
+      "@auththread/sink-webhook",
+      "@auththread/sink-object-store"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

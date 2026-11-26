@@ -1,0 +1,11 @@
+{
+  "tenants": [
+    {
+      "tenant": "demo",
+      "provider": "oidc",
+      "apiKey": "at_replace_me",
+      "salt": "replace-with-a-long-random-tenant-salt",
+      "providerSettings": {}
+    }
+  ]
+}

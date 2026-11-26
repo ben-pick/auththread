@@ -1,7 +1,11 @@
 node_modules
+**/node_modules
 .git
 .turbo
+**/dist
+**/.vitest-cache
+**/.wrangler
 coverage
-.vitest-cache
-examples/keycloak-compose/web/app.js
-examples/keycloak-compose/web/dist
+reports
+research_notes
+*.tgz

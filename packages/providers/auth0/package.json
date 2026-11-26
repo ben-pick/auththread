@@ -6,26 +6,79 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
     "./actions": "./src/actions.ts",
-    "./package.json": "./package.json",
-    "./browser": "./src/browser.ts"
+    "./page/snippet.js": "./page/snippet.js",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src",
-    "page"
+    "dist",
+    "page",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache",
+    "build": "node ../../../scripts/build-package.ts && pnpm build:actions",
+    "prepack": "pnpm build",
+    "build:actions": "esbuild src/actions.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist/actions.cjs"
   },
   "dependencies": {
-    "@auththread/adapter-kit": "workspace:*",
-    "@auththread/schema": "workspace:*",
+    "@auththread/adapter-kit": "workspace:^",
+    "@auththread/schema": "workspace:^",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
-  }
+    "vitest": "catalog:",
+    "esbuild": "0.28.2"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ben-pick/auththread.git",
+    "directory": "packages/providers/auth0"
+  },
+  "homepage": "https://github.com/ben-pick/auththread#readme",
+  "bugs": {
+    "url": "https://github.com/ben-pick/auththread/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./browser": {
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
+      },
+      "./actions": {
+        "types": "./dist/actions.d.ts",
+        "import": "./dist/actions.js",
+        "require": "./dist/actions.cjs"
+      },
+      "./page/snippet.js": "./page/snippet.js",
+      "./package.json": "./package.json"
+    }
+  },
+  "author": "Auththread contributors",
+  "keywords": [
+    "auth0",
+    "auth",
+    "observability",
+    "universal-login",
+    "actions"
+  ]
 }

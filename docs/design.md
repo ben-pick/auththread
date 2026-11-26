@@ -469,7 +469,7 @@ shrinks back to one route with one store, the layers and schemas become overhead
 - No OTLP protobuf.
 - No signed page-snippet release or SRI build pipeline.
 - No rate limiting on the stitcher.
-- No Terraform modules or Helm chart.
+- No Terraform or Pulumi modules.
 - No Playwright end-to-end test against Keycloak.
 - No published `auth.*` semantic convention proposal.
 
