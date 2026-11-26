@@ -493,6 +493,28 @@ importers:
 
   packages/tooling/agents: {}
 
+  packages/tooling/conformance:
+    dependencies:
+      '@auththread/adapter-kit':
+        specifier: workspace:*
+        version: link:../../core/adapter-kit
+      '@auththread/runtime-cloudflare':
+        specifier: workspace:*
+        version: link:../../runtimes/cloudflare
+      '@auththread/schema':
+        specifier: workspace:*
+        version: link:../../core/schema
+      '@auththread/stitcher':
+        specifier: workspace:*
+        version: link:../../core/stitcher
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2))
+
 packages:
 
   '@biomejs/biome@2.6.4':

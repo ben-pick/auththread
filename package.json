@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm agents:check",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm agents:check",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

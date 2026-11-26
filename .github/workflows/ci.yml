@@ -32,6 +32,7 @@ jobs:
           - ./packages/sinks/otlp
           - ./packages/sinks/wide-event
           - ./packages/sinks/webhook
+          - ./packages/tooling/conformance
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
