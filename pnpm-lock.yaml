@@ -193,6 +193,12 @@ importers:
       '@auththread/auth0':
         specifier: workspace:*
         version: link:packages/providers/auth0
+      '@auththread/oidc':
+        specifier: workspace:*
+        version: link:packages/providers/oidc
+      '@auththread/runtime-node':
+        specifier: workspace:*
+        version: link:packages/runtimes/node
       '@auththread/schema':
         specifier: workspace:*
         version: link:packages/core/schema

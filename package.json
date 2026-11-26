@@ -17,7 +17,8 @@
     "agents:check": "node packages/tooling/agents/src/cli.ts check",
     "agents:index": "node packages/tooling/agents/src/cli.ts index",
     "gen": "node packages/tooling/generators/src/cli.ts",
-    "demo": "node scripts/demo.ts"
+    "demo": "node scripts/demo.ts",
+    "smoke": "node scripts/smoke.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
@@ -29,6 +30,8 @@
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
     "@auththread/auth0": "workspace:*",
+    "@auththread/oidc": "workspace:*",
+    "@auththread/runtime-node": "workspace:*",
     "@auththread/schema": "workspace:*",
     "@auththread/sink-wide-event": "workspace:*",
     "@auththread/stitcher": "workspace:*"

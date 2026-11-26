@@ -18,6 +18,7 @@ import { createWideEventSink } from "@auththread/sink-wide-event";
 export interface Env {
   readonly JOURNEY: DurableObjectNamespace;
   readonly AUTHTHREAD_TENANTS: string;
+  readonly AUTHTHREAD_QUIET_MS?: string;
   readonly OTLP_ENDPOINT?: string;
   readonly OTLP_HEADERS?: string;
 }
@@ -86,6 +87,7 @@ export class JourneyDurableObject {
       sinks: sinksFor(env),
       settings: createStaticSettings(tenants),
       captureBatches: false,
+      quietMs: Number(env.AUTHTHREAD_QUIET_MS ?? "600000"),
     });
     this.inner = new DurableObject(state as never);
   }

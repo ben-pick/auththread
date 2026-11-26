@@ -10,6 +10,9 @@ actionlint and the agent file checks. Current result: 20 test files, 103 tests, 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
   hook, callback and provider event. Outcome `denied`, one inferred correlation.
+- **The HTTP surface.** `pnpm smoke` starts the Node runtime, sends four spans and one Auth0
+  log stream event over real HTTP, and asserts a 401 without a key, a 401 with a bad feed
+  secret, one denied journey with five steps, one inferred join, and no raw identifier.
 - **Order tolerance.** `runEndToEndConformance` delivers the corpus in order, reversed,
   duplicated and delayed, and requires byte-identical batches.
 - **Cross runtime equality.** `packages/tooling/conformance` delivers the same corpus to the

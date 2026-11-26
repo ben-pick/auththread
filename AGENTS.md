@@ -19,6 +19,7 @@ tool the team already uses.
 
 - `mise exec -- pnpm check` runs typecheck, lint, tests, boundaries and agent checks.
 - `mise exec -- pnpm demo` replays the shared corpus and prints one wide event.
+- `mise exec -- pnpm smoke` drives the Node HTTP surface: auth, feed signature, join, sink.
 
 ## Invariants
 
