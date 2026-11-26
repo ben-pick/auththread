@@ -34,10 +34,13 @@ jobs:
       - run: docker build -t auththread:ci .
       - name: Smoke the image
         run: |
+          cat > auththread-config.json <<'JSON'
+          {"tenants":[{"tenant":"demo","provider":"oidc","apiKey":"at_test","salt":"salt-salt"}]}
+          JSON
           docker run -d --name auththread-ci -p 8787:8787 \
-            -e AUTHTHREAD_CONFIG='{"tenants":[{"tenant":"demo","provider":"oidc","apiKey":"at_test","salt":"salt-salt"}]}' \
+            -v "$PWD/auththread-config.json:/etc/auththread/config.json:ro" \
             auththread:ci
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8787/healthz; then exit 0; fi
             sleep 1
           done
