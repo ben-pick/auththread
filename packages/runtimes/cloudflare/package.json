@@ -1,0 +1,27 @@
+{
+  "name": "@auththread/runtime-cloudflare",
+  "version": "0.1.0",
+  "description": "Cloudflare runtime: Durable Object buffer, alarm scheduler, one object per tenant.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:*",
+    "@auththread/schema": "workspace:*",
+    "@auththread/stitcher": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@auththread/runtime-node",
+  "version": "0.1.0",
+  "description": "Node server runtime: in-memory buffer, timer scheduler, JSON settings.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:*",
+    "@auththread/schema": "workspace:*",
+    "@auththread/stitcher": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
