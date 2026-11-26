@@ -144,6 +144,29 @@ describe("verifyLogStream", () => {
       ).toBe(false);
     }),
   );
+
+  it.effect("accepts Auth0's Authorization header", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* verifyLogStream(
+          { headers: { authorization: "x" } },
+          { feedSecret: "x" },
+        ),
+      ).toBe(true);
+      expect(
+        yield* verifyLogStream(
+          { headers: { authorization: "Bearer x" } },
+          { feedSecret: "x" },
+        ),
+      ).toBe(true);
+      expect(
+        yield* verifyLogStream(
+          { headers: { authorization: "Bearer y" } },
+          { feedSecret: "x" },
+        ),
+      ).toBe(false);
+    }),
+  );
 });
 
 describe("classifyAuth0Type", () => {

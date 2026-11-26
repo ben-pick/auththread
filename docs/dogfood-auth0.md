@@ -99,9 +99,12 @@ Auth0 Dashboard → **Monitoring → Log Streams → Create Log Stream → Custo
 Webhook** (naming varies by tenant).
 
 - Endpoint: `https://YOUR_TUNNEL/v1/providers/auth0/log-stream`
-- Custom header:
-  - `x-auththread-feed-secret: PASTE_FEED_SECRET`
-- Format: JSON
+- **Authorization Token**: `Bearer PASTE_FEED_SECRET`
+- Content Type: `application/json`
+
+Auth0 calls this field “Authorization Token”; the feed accepts either the
+`Authorization: Bearer <feedSecret>` value or the older
+`x-auththread-feed-secret` header.
 
 Trigger a login, then check the server log for a `provider event` step. Log
 Stream delivery can lag by a few seconds.
