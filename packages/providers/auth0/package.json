@@ -1,0 +1,28 @@
+{
+  "name": "@auththread/auth0",
+  "version": "0.1.0",
+  "description": "Auth0 deep adapter: Universal Login, Actions, and Log Streams.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./actions": "./src/actions.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "page"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:*",
+    "@auththread/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
