@@ -1,5 +1,6 @@
 import type { ProviderAdapter } from "@auththread/adapter-kit";
-import type { Outcome, ProviderEvent, TraceId } from "@auththread/schema";
+import type { Outcome, ProviderEvent } from "@auththread/schema";
+import { Option, Schema } from "effect";
 
 const OUTCOMES: Record<string, Outcome> = {
   login_success: "success",
@@ -8,25 +9,18 @@ const OUTCOMES: Record<string, Outcome> = {
   signup_failure: "failed",
 };
 
-export interface BrowserProvider {
-  readonly id: string;
-  authorizeParams(traceId: TraceId): Record<string, string>;
-}
-
-/** Any OIDC client: no extra authorize params, the browser SDK keys the journey on its state. */
-export const oidcBrowser: BrowserProvider = {
-  id: "oidc",
-  authorizeParams: () => ({}),
-};
-
 const classify = (
   event: ProviderEvent,
 ): { outcome?: Outcome; errorCode?: string } => {
   const outcome = OUTCOMES[event.type];
-  const vendorCode = event.attributes["auth.error.vendor_code"];
+  const vendorCode = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.String)(
+      event.attributes["auth.error.vendor_code"],
+    ),
+  );
   return {
     ...(outcome === undefined ? {} : { outcome }),
-    ...(typeof vendorCode === "string" ? { errorCode: vendorCode } : {}),
+    ...(vendorCode === undefined ? {} : { errorCode: vendorCode }),
   };
 };
 

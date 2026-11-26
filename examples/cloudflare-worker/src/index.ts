@@ -1,137 +1,74 @@
 import { DurableObject } from "cloudflare:workers";
 import {
-  createStaticSettings,
   DEFAULT_SAMPLING,
   type SamplingPolicy,
+  SettingsError,
+  SettingsStore,
   type Sink,
+  staticSettings,
   type TenantSettings,
 } from "@auththread/adapter-kit";
-import { type Auth0FeedSettings, auth0Adapter } from "@auththread/auth0";
+import {
+  type Auth0FeedSettings,
+  Auth0FeedSettingsSchema,
+  auth0Adapter,
+} from "@auththread/auth0";
 import { oidcAdapter } from "@auththread/oidc";
 import { createOtlpExporter } from "@auththread/otlp";
 import {
   createJourneyDurableObject,
   createKeyDirectory,
+  type JourneyDurableObjectInstance,
   type KeyDirectory,
 } from "@auththread/runtime-cloudflare";
 import { sha256Hex } from "@auththread/schema";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWideEventSink } from "@auththread/sink-wide-event";
+import { Effect, Layer, Schema } from "effect";
 
-interface TenantConfig {
-  readonly tenants: readonly TenantEntry[];
-}
+const TenantSchema = Schema.Struct({
+  tenant: Schema.String.check(Schema.isMinLength(1)),
+  provider: Schema.String.check(Schema.isMinLength(1)),
+  apiKey: Schema.String.check(Schema.isMinLength(1)),
+  salt: Schema.String.check(Schema.isMinLength(8)),
+  providerSettings: Schema.optionalKey(Auth0FeedSettingsSchema),
+});
 
-interface TenantEntry {
-  readonly tenant: string;
-  readonly provider: string;
-  readonly apiKey: string;
-  readonly salt: string;
-  readonly providerSettings: Auth0FeedSettings;
-}
+const TenantConfigSchema = Schema.fromJsonString(
+  Schema.Struct({ tenants: Schema.Array(TenantSchema) }),
+);
 
-const record = (value: unknown, what: string): Record<string, unknown> => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${what} must be an object`);
-  }
-  return value as Record<string, unknown>;
-};
+const HeadersSchema = Schema.fromJsonString(
+  Schema.Record(Schema.String, Schema.String),
+);
 
-const text = (value: unknown, what: string): string => {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`${what} must be a non-empty string`);
-  }
-  return value;
-};
+const configFor = (source: string) =>
+  Schema.decodeUnknownResult(TenantConfigSchema)(source);
 
-const optionalText = (value: unknown, what: string): string | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") throw new Error(`${what} must be a string`);
-  return value;
-};
-
-const parseJson = (value: string, what: string): unknown => {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    throw new Error(`${what} is not valid JSON`);
-  }
-};
-
-const decodeFeedSettings = (
-  value: unknown,
-  what: string,
-): Auth0FeedSettings => {
-  const input = value === undefined ? {} : record(value, what);
-  const settings: {
-    feedSecret?: string;
-    domain?: string;
-    managementToken?: string;
-  } = {};
-
-  const feedSecret = optionalText(input.feedSecret, `${what}.feedSecret`);
-  if (feedSecret !== undefined) settings.feedSecret = feedSecret;
-  const domain = optionalText(input.domain, `${what}.domain`);
-  if (domain !== undefined) settings.domain = domain;
-  const managementToken = optionalText(
-    input.managementToken,
-    `${what}.managementToken`,
-  );
-  if (managementToken !== undefined) settings.managementToken = managementToken;
-
-  return settings;
-};
-
-const decodeTenant = (value: unknown, index: number): TenantEntry => {
-  const what = `AUTHTHREAD_TENANTS.tenants[${index}]`;
-  const input = record(value, what);
+const samplingOf = (raw: string | undefined): SamplingPolicy => {
+  const parsed = Number(raw ?? "0.1");
   return {
-    tenant: text(input.tenant, `${what}.tenant`),
-    provider: text(input.provider, `${what}.provider`),
-    apiKey: text(input.apiKey, `${what}.apiKey`),
-    salt: text(input.salt, `${what}.salt`),
-    providerSettings: decodeFeedSettings(
-      input.providerSettings,
-      `${what}.providerSettings`,
-    ),
+    ...DEFAULT_SAMPLING,
+    successRate: Number.isFinite(parsed)
+      ? Math.min(Math.max(parsed, 0), 1)
+      : 0.1,
   };
 };
 
-const parseTenants = (value: string): TenantConfig => {
-  const parsed = record(
-    parseJson(value, "AUTHTHREAD_TENANTS"),
-    "AUTHTHREAD_TENANTS",
-  );
-  if (!Array.isArray(parsed.tenants)) {
-    throw new Error("AUTHTHREAD_TENANTS needs a tenants array");
-  }
-  return { tenants: parsed.tenants.map(decodeTenant) };
-};
-
-const parseHeaders = (value: string): Record<string, string> => {
-  const parsed = record(parseJson(value, "OTLP_HEADERS"), "OTLP_HEADERS");
-  const headers: Record<string, string> = {};
-  for (const [key, header] of Object.entries(parsed)) {
-    headers[key] = text(header, `OTLP_HEADERS.${key}`);
-  }
-  return headers;
-};
-
-const onError = (error: unknown): void => {
-  console.error(
+const onError = (error: unknown): Effect.Effect<void> =>
+  Effect.logError(
     JSON.stringify({
       message: "auththread runtime error",
       error: error instanceof Error ? error.message : String(error),
     }),
   );
-};
 
-const sinksFor = (env: Env): Sink[] => {
-  const raw = Number(env.AUTHTHREAD_SAMPLE_SUCCESS ?? "0.1");
-  const sampling: SamplingPolicy = {
-    ...DEFAULT_SAMPLING,
-    successRate: Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0.1,
-  };
+const sinksFor = (env: Env): readonly Sink[] => {
+  const sampling = samplingOf(env.AUTHTHREAD_SAMPLE_SUCCESS);
+  const headers =
+    env.OTLP_HEADERS === undefined
+      ? {}
+      : Schema.decodeUnknownSync(HeadersSchema)(env.OTLP_HEADERS);
 
   return [
     createWideEventSink({ sampling }),
@@ -143,10 +80,7 @@ const sinksFor = (env: Env): Sink[] => {
             exporter: createOtlpExporter({
               endpoint: env.OTLP_ENDPOINT,
               serviceName: "auththread",
-              headers:
-                env.OTLP_HEADERS === undefined
-                  ? {}
-                  : parseHeaders(env.OTLP_HEADERS),
+              headers,
             }),
           }),
         ]),
@@ -154,25 +88,29 @@ const sinksFor = (env: Env): Sink[] => {
 };
 
 export class JourneyDurableObject extends DurableObject<Env> {
-  readonly inner: InstanceType<ReturnType<typeof createJourneyDurableObject>>;
+  readonly inner: JourneyDurableObjectInstance;
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
-    const config = parseTenants(env.AUTHTHREAD_TENANTS);
-    const tenants: TenantSettings<Auth0FeedSettings>[] = config.tenants.map(
-      (tenant) => ({
-        tenant: tenant.tenant,
-        provider: tenant.provider,
-        apiKeyHash: sha256Hex(tenant.apiKey),
-        salt: tenant.salt,
-        providerSettings: tenant.providerSettings,
-      }),
-    );
+
+    const decoded = configFor(env.AUTHTHREAD_TENANTS);
+    // The Worker validates the same config before routing. An invalid value
+    // leaves this object with no tenants instead of throwing in a constructor.
+    const tenants: TenantSettings<Auth0FeedSettings>[] =
+      decoded._tag === "Success"
+        ? decoded.success.tenants.map((tenant) => ({
+            tenant: tenant.tenant,
+            provider: tenant.provider,
+            apiKeyHash: sha256Hex(tenant.apiKey),
+            salt: tenant.salt,
+            providerSettings: tenant.providerSettings ?? {},
+          }))
+        : [];
 
     const JourneyRuntime = createJourneyDurableObject({
       providers: [oidcAdapter, auth0Adapter],
       sinks: sinksFor(env),
-      settings: createStaticSettings(tenants),
+      settings: Layer.succeed(SettingsStore, staticSettings(tenants)),
       captureBatches: false,
       quietMs: Number(env.AUTHTHREAD_QUIET_MS ?? "600000"),
       onError,
@@ -199,38 +137,70 @@ const CORS: Record<string, string> = {
 
 let cached: { sourceHash: string; directory: KeyDirectory } | null = null;
 
-const directoryFor = (source: string): KeyDirectory => {
-  const sourceHash = sha256Hex(source);
-  if (cached?.sourceHash === sourceHash) return cached.directory;
-  const config = parseTenants(source);
-  const directory = createKeyDirectory(
-    config.tenants.map((tenant) => ({
-      tenant: tenant.tenant,
-      apiKey: tenant.apiKey,
-    })),
-  );
-  cached = { sourceHash, directory };
-  return directory;
-};
+const directoryFor = (
+  source: string,
+): Effect.Effect<KeyDirectory, SettingsError> =>
+  Effect.gen(function* () {
+    const sourceHash = sha256Hex(source);
+    if (cached?.sourceHash === sourceHash) return cached.directory;
+
+    const decoded = configFor(source);
+    if (decoded._tag === "Failure")
+      return yield* new SettingsError({
+        message: `invalid AUTHTHREAD_TENANTS: ${decoded.failure.message}`,
+      });
+
+    const directory = yield* createKeyDirectory(
+      decoded.success.tenants.map((tenant) => ({
+        tenant: tenant.tenant,
+        apiKey: tenant.apiKey,
+      })),
+    );
+    cached = { sourceHash, directory };
+    return directory;
+  });
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS });
-    }
-    if (new URL(request.url).pathname === "/healthz") {
-      return Response.json({ ok: true });
-    }
+  fetch(request: Request, env: Env): Promise<Response> {
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        if (request.method === "OPTIONS") {
+          return new Response(null, { status: 204, headers: CORS });
+        }
+        if (new URL(request.url).pathname === "/healthz") {
+          return Response.json({ ok: true });
+        }
 
-    const tenant = await directoryFor(env.AUTHTHREAD_TENANTS).resolve(request);
-    if (tenant === null) {
-      return Response.json(
-        { error: "unauthorized" },
-        { status: 401, headers: CORS },
-      );
-    }
+        return yield* Effect.gen(function* () {
+          const directory = yield* directoryFor(env.AUTHTHREAD_TENANTS);
+          const tenant = yield* directory.resolve(request);
+          if (tenant === null)
+            return Response.json(
+              { error: "unauthorized" },
+              { status: 401, headers: CORS },
+            );
 
-    const id = env.JOURNEY.idFromName(tenant);
-    return env.JOURNEY.get(id).fetch(request);
+          const id = env.JOURNEY.idFromName(tenant);
+          return yield* Effect.tryPromise({
+            try: () => env.JOURNEY.get(id).fetch(request),
+            catch: (cause) =>
+              new SettingsError({
+                message:
+                  "the journey Durable Object could not serve the request",
+                cause,
+              }),
+          });
+        }).pipe(
+          Effect.catchCause(() =>
+            Effect.succeed(
+              Response.json(
+                { error: "internal" },
+                { status: 500, headers: CORS },
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   },
 };

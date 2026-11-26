@@ -1,45 +1,70 @@
 # Adding a runtime
 
 A runtime supplies a buffer, a scheduler, settings and a way to serve `Request` to
-`Response`. The join logic already lives in `@auththread/stitcher`.
+`Response`. The join logic already lives in `@auththread/stitcher`, as Effect services.
 
-## 1. Implement the three interfaces
+## 1. Implement the service contracts
 
 ```ts
-interface JourneyBuffer {
-  append(traceId, item): Promise<void>;
-  read(traceId): Promise<JourneyItem[]>;
-  delete(traceId): Promise<void>;
-  indexHints(traceId, hints, atMs): Promise<void>;
-  findCandidates(hints, windowMs, nowMs): Promise<TraceId[]>;
-  prune(beforeMs): Promise<number>;
-}
+import { Context, type Effect, type Scope } from "effect";
 
-interface Scheduler {
-  schedule(traceId, atMs): Promise<void>;
-  cancel(traceId): Promise<void>;
-  onDue(handler): void;
-  runDue(nowMs): Promise<void>;
-}
+class JourneyBuffer extends Context.Service<
+  JourneyBuffer,
+  {
+    append(traceId, item): Effect.Effect<void, StorageError>;
+    read(traceId): Effect.Effect<JourneyItem[], StorageError>;
+    delete(traceId): Effect.Effect<void, StorageError>;
+    indexHints(traceId, hints, atMs): Effect.Effect<void, StorageError>;
+    findCandidates(hints, windowMs, nowMs): Effect.Effect<TraceId[], StorageError>;
+    prune(beforeMs): Effect.Effect<number, StorageError>;
+  }
+>()("auththread/JourneyBuffer") {}
+
+class Scheduler extends Context.Service<
+  Scheduler,
+  {
+    schedule(traceId, atMs): Effect.Effect<void, StorageError>;
+    cancel(traceId): Effect.Effect<void, StorageError>;
+    onDue(
+      handler: (traceId, nowMs) => Effect.Effect<void, StorageError>,
+    ): Effect.Effect<void, never, Scope.Scope>;
+    runDue(nowMs): Effect.Effect<void, StorageError>;
+  }
+>()("auththread/Scheduler") {}
 ```
 
-Settings implement `SettingsStore.getTenant(apiKeyHash)`. Hash the key, never store it.
+Settings implement `SettingsStore.getTenant(apiKeyHash): Effect<TenantSettings | null>`.
+Hash the key, never store it. Wrap platform calls with `Effect.tryPromise` and map failures to
+`StorageError`.
 
-The invariants the suite checks: duplicate appends collapse, concurrent appends to one trace
-are safe, hints expire outside the window, a cancelled timer never fires, and prune returns
-the number of dropped journeys.
+Provide both services from one `Layer`:
 
-## 2. Serve the Fetch port
+```ts
+const sqliteLayer = Layer.effectContext(
+  Effect.map(createSQLiteStore(options), (store) =>
+    Context.make(JourneyBuffer, store.buffer).pipe(
+      Context.add(Scheduler, store.scheduler),
+    ),
+  ),
+);
+```
 
-`createStitcher` returns `fetch(Request)`. The Node runtime adapts `node:http` to it. A
-Cloudflare Durable Object forwards to it directly. Anything with a Fetch handler works.
+## 2. Serve the routes
+
+`@auththread/stitcher` exports `httpRoutes`, a layer that registers the catch-all route on
+Effect's `HttpRouter`. On Node, provide it with `nodeServerLayer`; on Workers, use
+`HttpRouter.toWebHandler(httpRoutes.pipe(Layer.provide(stitcherLayer(options))))`.
 
 ## 3. Prove it
 
 ```ts
-const report = await runRuntimeConformance({ buffer, scheduler, fixture });
+const report = yield* runRuntimeConformance({ buffer, scheduler, fixture });
 expect(report.failures).toEqual([]);
 ```
+
+Your runtime must also fire due journeys. Call `stitcher.runDue(now)` from a timer, an
+alarm or a worker loop. The Node layer starts a 250 ms poll; the Cloudflare Durable Object
+uses its alarm. Without one, journeys never finalise.
 
 Then run the end-to-end suite. It delivers the corpus in order, reversed, duplicated and
 delayed, and requires byte-identical batches. If your runtime disagrees with the Node

@@ -11,8 +11,11 @@ scope:
 
 ## Outcome
 
-- `createSQLiteStore` implements `JourneyBuffer` and `NodeScheduler` on top of the built-in
-  `node:sqlite` `DatabaseSync`. No dependency is added.
+- `createSQLiteStore` returns an Effect that acquires a `JourneyBuffer` and a `Scheduler` on
+  top of the built-in `node:sqlite` `DatabaseSync`, scoped to the caller. No dependency is
+  added.
+- `sqliteStoreLayer` provides both services from one database. Startup rebuilds deadlines
+  and starts a scoped poll fiber when `autoStart` is not `false`.
 - The store opens with `journal_mode = WAL`, `synchronous = NORMAL` and `busy_timeout = 5000`.
 - Items, hints, transactions, finalise deadlines and trace owners live in five tables. Every
   append is one `BEGIN IMMEDIATE` transaction, so an item and its index cannot diverge.
@@ -20,8 +23,8 @@ scope:
   memory buffer.
 - Startup rebuilds any missing or stale deadline from `MAX(items.at_ms) + quietMs`. A crash
   between append and schedule therefore recovers on the next start.
-- `createNodeServer` accepts a buffer and scheduler, drains in-flight journeys on `close()`,
-  then flushes sinks. `close()` is ordered: stop accepting, drain, flush, close the database.
+- `nodeServerLayer` serves the stitcher through `NodeHttpServer` and a scoped poll fiber.
+  The stitcher layer drains in-flight journeys and flushes sinks when its scope closes.
 
 ## Rules
 

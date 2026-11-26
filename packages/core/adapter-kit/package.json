@@ -16,9 +16,11 @@
     "test": "vitest run --fsModuleCachePath ./.vitest-cache"
   },
   "dependencies": {
-    "@auththread/schema": "workspace:*"
+    "@auththread/schema": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

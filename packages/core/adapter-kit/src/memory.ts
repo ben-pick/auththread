@@ -1,10 +1,14 @@
 import type { CorrelationHints, Span, TraceId } from "@auththread/schema";
 import { compareStrings } from "@auththread/schema";
-import type {
+import { Effect, Layer } from "effect";
+import { StorageError } from "./errors.ts";
+import {
   JourneyBuffer,
-  JourneyItem,
+  type JourneyItem,
   Scheduler,
-  TenantSettings,
+  Secrets,
+  SettingsStore,
+  type TenantSettings,
 } from "./runtime.ts";
 
 export const hintKeys = (hints: CorrelationHints): string[] => {
@@ -17,11 +21,23 @@ export const hintKeys = (hints: CorrelationHints): string[] => {
   return keys;
 };
 
-const newest = (items: JourneyItem[]): number =>
-  items.reduce((latest, item) => Math.max(latest, item.atMs), 0);
+const newest = (items: Iterable<JourneyItem>): number => {
+  let latest = 0;
+  for (const item of items) latest = Math.max(latest, item.atMs);
+  return latest;
+};
+
+const storage = <A>(
+  operation: string,
+  run: () => A,
+): Effect.Effect<A, StorageError> =>
+  Effect.try({
+    try: run,
+    catch: (cause) => new StorageError({ operation, cause }),
+  });
 
 /** Used by the Node runtime, the Cloudflare runtime fallback and every test. */
-export function createMemoryBuffer(): JourneyBuffer {
+export function memoryBuffer(): JourneyBuffer["Service"] {
   const traces = new Map<TraceId, Map<string, JourneyItem>>();
   const hints = new Map<string, Map<TraceId, number>>();
   const transactions = new Map<string, Map<TraceId, number>>();
@@ -35,146 +51,180 @@ export function createMemoryBuffer(): JourneyBuffer {
   };
 
   return {
-    async append(traceId, item) {
-      const items = trace(traceId);
-      if (!items.has(item.id)) items.set(item.id, item);
-    },
-    async read(traceId) {
-      return [...(traces.get(traceId)?.values() ?? [])];
-    },
-    async delete(traceId) {
-      traces.delete(traceId);
-      for (const entries of hints.values()) entries.delete(traceId);
-      for (const entries of transactions.values()) entries.delete(traceId);
-    },
-    async indexHints(traceId, hintValues, atMs) {
-      for (const key of hintKeys(hintValues)) {
-        const entries = hints.get(key) ?? new Map<TraceId, number>();
-        entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
-        hints.set(key, entries);
-      }
-      if (hintValues.transactionId !== undefined) {
-        const key = `${hintValues.tenant ?? ""}:${hintValues.transactionId}`;
-        const entries = transactions.get(key) ?? new Map<TraceId, number>();
-        entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
-        transactions.set(key, entries);
-      }
-    },
-    async findByTransaction(tenant, transactionId, windowMs, nowMs) {
-      const entries = transactions.get(`${tenant}:${transactionId}`);
-      if (entries === undefined) return null;
-
-      let best: TraceId | null = null;
-      let bestAt = -1;
-      for (const [traceId, atMs] of entries) {
-        if (Math.abs(nowMs - atMs) > windowMs) continue;
-        if (
-          atMs > bestAt ||
-          (atMs === bestAt &&
-            (best === null || compareStrings(traceId, best) < 0))
-        ) {
-          best = traceId;
-          bestAt = atMs;
+    append: (traceId, item) =>
+      storage("append", () => {
+        const items = trace(traceId);
+        if (!items.has(item.id)) items.set(item.id, item);
+      }),
+    read: (traceId) =>
+      storage("read", () => [...(traces.get(traceId)?.values() ?? [])]),
+    delete: (traceId) =>
+      storage("delete", () => {
+        traces.delete(traceId);
+        for (const entries of hints.values()) entries.delete(traceId);
+        for (const entries of transactions.values()) entries.delete(traceId);
+      }),
+    indexHints: (traceId, hintValues, atMs) =>
+      storage("indexHints", () => {
+        for (const key of hintKeys(hintValues)) {
+          const entries = hints.get(key) ?? new Map<TraceId, number>();
+          entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
+          hints.set(key, entries);
         }
-      }
-      return best;
-    },
-    async findCandidates(hintValues, windowMs, nowMs) {
-      const keys = hintKeys(hintValues);
-      if (keys.length === 0) return [];
-
-      let candidates: Set<TraceId> | null = null;
-      for (const key of keys) {
-        const matching = new Set<TraceId>();
-        for (const [traceId, atMs] of hints.get(key) ?? []) {
-          if (Math.abs(nowMs - atMs) <= windowMs) matching.add(traceId);
+        if (hintValues.transactionId !== undefined) {
+          const key = `${hintValues.tenant ?? ""}:${hintValues.transactionId}`;
+          const entries = transactions.get(key) ?? new Map<TraceId, number>();
+          entries.set(traceId, Math.max(entries.get(traceId) ?? 0, atMs));
+          transactions.set(key, entries);
         }
-        if (candidates === null) {
-          candidates = matching;
-        } else {
-          const next = new Set<TraceId>();
-          for (const traceId of candidates) {
-            if (matching.has(traceId)) next.add(traceId);
+      }),
+    findByTransaction: (tenant, transactionId, windowMs, nowMs) =>
+      storage("findByTransaction", () => {
+        const entries = transactions.get(`${tenant}:${transactionId}`);
+        if (entries === undefined) return null;
+
+        let best: TraceId | null = null;
+        let bestAt = -1;
+        for (const [traceId, atMs] of entries) {
+          if (Math.abs(nowMs - atMs) > windowMs) continue;
+          if (
+            atMs > bestAt ||
+            (atMs === bestAt &&
+              (best === null || compareStrings(traceId, best) < 0))
+          ) {
+            best = traceId;
+            bestAt = atMs;
           }
-          candidates = next;
         }
-        if (candidates.size === 0) return [];
-      }
+        return best;
+      }),
+    findCandidates: (hintValues, windowMs, nowMs) =>
+      storage("findCandidates", () => {
+        const keys = hintKeys(hintValues);
+        if (keys.length === 0) return [];
 
-      const result: Set<TraceId> = candidates ?? new Set();
-      return [...result].sort(compareStrings);
-    },
-    async prune(beforeMs) {
-      let dropped = 0;
-      for (const [traceId, items] of traces) {
-        if (items.size === 0) continue;
-        if (newest([...items.values()]) < beforeMs) {
-          traces.delete(traceId);
-          dropped += 1;
+        let candidates: Set<TraceId> | null = null;
+        for (const key of keys) {
+          const matching = new Set<TraceId>();
+          for (const [traceId, atMs] of hints.get(key) ?? []) {
+            if (Math.abs(nowMs - atMs) <= windowMs) matching.add(traceId);
+          }
+          if (candidates === null) {
+            candidates = matching;
+          } else {
+            const next = new Set<TraceId>();
+            for (const traceId of candidates) {
+              if (matching.has(traceId)) next.add(traceId);
+            }
+            candidates = next;
+          }
+          if (candidates.size === 0) return [];
         }
-      }
-      for (const entries of hints.values()) {
-        for (const [traceId, atMs] of entries) {
-          if (atMs < beforeMs) entries.delete(traceId);
+
+        return [...(candidates ?? new Set<TraceId>())].sort(compareStrings);
+      }),
+    prune: (beforeMs) =>
+      storage("prune", () => {
+        let dropped = 0;
+        for (const [traceId, items] of traces) {
+          if (items.size === 0) continue;
+          if (newest(items.values()) < beforeMs) {
+            traces.delete(traceId);
+            dropped += 1;
+          }
         }
-      }
-      for (const entries of transactions.values()) {
-        for (const [traceId, atMs] of entries) {
-          if (atMs < beforeMs) entries.delete(traceId);
+        for (const entries of hints.values()) {
+          for (const [traceId, atMs] of entries) {
+            if (atMs < beforeMs) entries.delete(traceId);
+          }
         }
-      }
-      return dropped;
-    },
+        for (const entries of transactions.values()) {
+          for (const [traceId, atMs] of entries) {
+            if (atMs < beforeMs) entries.delete(traceId);
+          }
+        }
+        return dropped;
+      }),
   };
 }
 
-export interface MemoryScheduler extends Scheduler {
-  readonly pending: ReadonlyMap<TraceId, number>;
-}
+export const memoryBufferLayer: Layer.Layer<JourneyBuffer> = Layer.sync(
+  JourneyBuffer,
+  memoryBuffer,
+);
 
-export function createMemoryScheduler(): MemoryScheduler {
+export type MemoryScheduler = Scheduler["Service"] & {
+  readonly pending: Effect.Effect<ReadonlyMap<TraceId, number>>;
+};
+
+export function memoryScheduler(): MemoryScheduler {
   const due = new Map<TraceId, number>();
-  const handlers: Array<(traceId: TraceId) => Promise<void>> = [];
+  const handlers = new Set<
+    (traceId: TraceId, nowMs: number) => Effect.Effect<void, StorageError>
+  >();
 
-  return {
-    get pending() {
-      return due;
-    },
-    async schedule(traceId, atMs) {
-      due.set(traceId, atMs);
-    },
-    async cancel(traceId) {
-      due.delete(traceId);
-    },
-    onDue(handler) {
-      handlers.push(handler);
-    },
-    async runDue(nowMs) {
+  const runDue = (nowMs: number): Effect.Effect<void, StorageError> =>
+    Effect.gen(function* () {
       const ready = [...due.entries()]
         .filter(([, atMs]) => atMs <= nowMs)
-        .sort(([, a], [, b]) => a - b || 0)
+        .sort(([, a], [, b]) => a - b)
         .map(([traceId]) => traceId);
 
       for (const traceId of ready) {
         due.delete(traceId);
-        for (const handler of handlers) await handler(traceId);
+        for (const handler of handlers) yield* handler(traceId, nowMs);
       }
-    },
+    });
+
+  return {
+    pending: Effect.sync(() => new Map(due)),
+    schedule: (traceId, atMs) =>
+      storage("schedule", () => {
+        due.set(traceId, atMs);
+      }),
+    cancel: (traceId) =>
+      storage("cancel", () => {
+        due.delete(traceId);
+      }),
+    onDue: (handler) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          handlers.add(handler);
+        }),
+        () =>
+          Effect.sync(() => {
+            handlers.delete(handler);
+          }),
+      ),
+    runDue,
   };
 }
 
-export function createStaticSettings<Settings>(
+export const memorySchedulerLayer: Layer.Layer<Scheduler> = Layer.sync(
+  Scheduler,
+  memoryScheduler,
+);
+
+export const staticSettings = <Settings>(
   tenants: readonly TenantSettings<Settings>[],
-): {
-  getTenant(apiKeyHash: string): Promise<TenantSettings<Settings> | null>;
-} {
+): SettingsStore["Service"] => {
   const byKey = new Map(tenants.map((tenant) => [tenant.apiKeyHash, tenant]));
   return {
-    async getTenant(apiKeyHash) {
-      return byKey.get(apiKeyHash) ?? null;
-    },
+    getTenant: (apiKeyHash) => Effect.succeed(byKey.get(apiKeyHash) ?? null),
   };
-}
+};
+
+export const staticSettingsLayer = <Settings>(
+  tenants: readonly TenantSettings<Settings>[],
+): Layer.Layer<SettingsStore> =>
+  Layer.succeed(SettingsStore, staticSettings(tenants));
+
+export const secretsLayer = (
+  values: Readonly<Record<string, string>>,
+): Layer.Layer<Secrets> =>
+  Layer.succeed(Secrets, {
+    get: (name) => Effect.succeed(values[name]),
+  });
 
 export const itemId = {
   span: (span: Span): string => `span:${span.spanId}`,

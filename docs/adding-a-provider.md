@@ -14,7 +14,7 @@ export interface ProviderAdapter<Settings> {
   feeds?: readonly Feed<Settings>[];
   correlate(event: ProviderEvent, settings: Settings): Correlation;
   classify(event: ProviderEvent): { outcome?: Outcome; errorCode?: string };
-  fetchConfig?(settings: Settings): Promise<ConfigSnapshot>;
+  fetchConfig?(settings: Settings): Effect.Effect<ConfigSnapshot, ProviderError>;
 }
 ```
 
@@ -28,11 +28,14 @@ provider has no mechanism, return `{}` and rely on the browser SDK's state round
 
 ## 3. Normalise the feed
 
-`feed.parse(body, context)` receives untrusted JSON. Validate it, map vendor codes to neutral
-types, and hash every identifier with `context.hashUser`. Never keep a raw email, user id or
-token.
+`feed.parse(body, context)` receives untrusted JSON and returns an
+`Effect<ProviderEvent[], FeedError>`. Validate it with Effect `Schema`, map vendor codes to
+neutral types, and hash every identifier with `context.hashUser`. Never keep a raw email,
+user id or token.
 
-`feed.verify` must fail closed when its secret is missing.
+`feed.verify` returns an `Effect<boolean, FeedError>` and must fail closed when its secret is
+missing. Export the Effect adapter at the package root and any browser helper from a
+`/browser` entry point, so the page bundle never imports Effect.
 
 ## 4. Join and classify
 
@@ -44,7 +47,7 @@ trace ID. Otherwise return hints. `classify` maps vendor error codes to `auth.er
 Add recorded, redacted payloads and a test in your package:
 
 ```ts
-const report = await runProviderConformance(adapter, fixtures);
+const report = yield* runProviderConformance(adapter, fixtures);
 expect(report.failures).toEqual([]);
 ```
 

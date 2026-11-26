@@ -1,4 +1,6 @@
 import type { Journey, Span, TraceId, WideEvent } from "@auththread/schema";
+import type { Effect } from "effect";
+import type { SinkError } from "./errors.ts";
 
 export interface SamplingPolicy {
   /** Outcomes that are always kept. Defaults to failed, denied, abandoned and slow. */
@@ -57,9 +59,9 @@ export interface Sink {
   /** Pure: decides sampling and renders the payload. Null means sampled away. */
   render(journey: Journey): SinkBatch | null;
   /** Must be safe to retry with the same batch. */
-  write(batch: SinkBatch): Promise<void>;
+  write(batch: SinkBatch): Effect.Effect<void, SinkError>;
   /** Flush any internal buffer. Called by runtimes on shutdown or before eviction. */
-  flush?(): Promise<void>;
+  readonly flush?: Effect.Effect<void, SinkError>;
   /** The key a receiver de-duplicates on. Defaults to the journey ID. */
   idempotencyKey?(batch: SinkBatch): string;
 }

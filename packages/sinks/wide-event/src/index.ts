@@ -2,16 +2,20 @@ import {
   DEFAULT_SAMPLING,
   type SamplingPolicy,
   type Sink,
+  SinkError,
   shouldKeep,
 } from "@auththread/adapter-kit";
 import { type Journey, toWideEvent } from "@auththread/schema";
+import { Effect } from "effect";
 
 export interface WideEventSinkOptions {
   readonly sampling?: SamplingPolicy;
   readonly write?: (line: string) => void;
 }
 
-export function createWideEventSink(options: WideEventSinkOptions = {}): Sink {
+export const createWideEventSink = (
+  options: WideEventSinkOptions = {},
+): Sink => {
   const sampling = options.sampling ?? DEFAULT_SAMPLING;
   const write = options.write ?? ((line: string) => console.log(line));
 
@@ -27,9 +31,17 @@ export function createWideEventSink(options: WideEventSinkOptions = {}): Sink {
         wideEvent: toWideEvent(journey),
       };
     },
-    async write(batch) {
-      if (batch.wideEvent === undefined) return;
-      write(JSON.stringify(batch.wideEvent));
+    write: (batch) => {
+      if (batch.wideEvent === undefined) return Effect.void;
+      return Effect.try({
+        try: () => write(JSON.stringify(batch.wideEvent)),
+        catch: (cause) =>
+          new SinkError({
+            sink: "wide-event-stdout",
+            message: "stdout write failed",
+            cause,
+          }),
+      });
     },
   };
-}
+};

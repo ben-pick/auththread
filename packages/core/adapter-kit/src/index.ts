@@ -3,7 +3,10 @@ export type {
   EndToEndInput,
   StitcherLike,
 } from "./conformance/end-to-end.ts";
-export { runEndToEndConformance } from "./conformance/end-to-end.ts";
+export {
+  runEndToEndConformance,
+  StitcherUnderTest,
+} from "./conformance/end-to-end.ts";
 export type { ProviderConformanceFixtures } from "./conformance/provider.ts";
 export { runProviderConformance } from "./conformance/provider.ts";
 export type { Checker, ConformanceReport } from "./conformance/report.ts";
@@ -17,13 +20,24 @@ export type { SinkConformanceInput } from "./conformance/sink.ts";
 export { runSinkConformance } from "./conformance/sink.ts";
 export type { JourneyFixture } from "./corpus.ts";
 export { journeyCorpus, journeyOf, piiCorpus } from "./corpus.ts";
+export {
+  FeedError,
+  ProviderError,
+  SettingsError,
+  SinkError,
+  StorageError,
+} from "./errors.ts";
 export type { MemoryScheduler } from "./memory.ts";
 export {
-  createMemoryBuffer,
-  createMemoryScheduler,
-  createStaticSettings,
   hintKeys,
   itemId,
+  memoryBuffer,
+  memoryBufferLayer,
+  memoryScheduler,
+  memorySchedulerLayer,
+  secretsLayer,
+  staticSettings,
+  staticSettingsLayer,
 } from "./memory.ts";
 export type {
   Capability,
@@ -36,16 +50,16 @@ export type {
 } from "./provider.ts";
 export { CAPABILITIES } from "./provider.ts";
 export type {
-  JourneyBuffer,
+  JourneyBufferService,
   JourneyItem,
+  SchedulerService,
+  TenantSettings,
+} from "./runtime.ts";
+export {
+  JourneyBuffer,
   Scheduler,
   Secrets,
   SettingsStore,
-  TenantSettings,
 } from "./runtime.ts";
 export type { SamplingPolicy, Sink, SinkBatch } from "./sink.ts";
-export {
-  DEFAULT_SAMPLING,
-  sampleScore,
-  shouldKeep,
-} from "./sink.ts";
+export { DEFAULT_SAMPLING, sampleScore, shouldKeep } from "./sink.ts";

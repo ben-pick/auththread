@@ -16,7 +16,8 @@
     "@auththread/runtime-cloudflare": "workspace:*",
     "@auththread/schema": "workspace:*",
     "@auththread/sink-otlp": "workspace:*",
-    "@auththread/sink-wide-event": "workspace:*"
+    "@auththread/sink-wide-event": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

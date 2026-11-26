@@ -52,9 +52,10 @@ UI or a trace store. It does not ship the paid reliability service.
                                        └─▶ object store ─▶ S3/R2 → ClickHouse
 ```
 
-The stitcher is a Fetch handler: `fetch(Request): Promise<Response>`. Cloudflare calls it
-directly. The Node runtime adapts `node:http` to it. That one choice gives four hosts
-(Workers, Node, Bun, Deno) without a framework.
+The stitcher is an Effect service with `handle(request): Effect<Response>`, exposed through
+Effect `HttpRouter` routes. The web port remains the platform edge: Cloudflare and Node both
+hand it a `Request`. That keeps four hosts (Workers, Node, Bun, Deno) on one code path
+without a framework.
 
 Data enters three ways:
 
@@ -265,17 +266,19 @@ interface ProviderAdapter<Settings> {
   feeds?: readonly Feed<Settings>[];
   correlate(event: ProviderEvent, settings: Settings): Correlation;
   classify(event: ProviderEvent): { outcome?: Outcome; errorCode?: string };
-  fetchConfig?(settings: Settings): Promise<ConfigSnapshot>;
+  fetchConfig?(settings: Settings): Effect.Effect<ConfigSnapshot, ProviderError>;
 }
 ```
 
-`Feed.verify` fails closed. `Feed.parse(body, context)` receives untrusted input and a
-`hashUser` function.
+`Feed.verify` returns `Effect<boolean, FeedError>` and fails closed. `Feed.parse(body,
+context)` receives untrusted input, decodes it with Effect `Schema`, and returns
+`Effect<ProviderEvent[], FeedError>`.
 
 ### Runtime
 
-`JourneyBuffer`, `Scheduler`, `SettingsStore` and `Secrets`. The buffer indexes hints and
-prunes by age. The scheduler exposes `runDue(now)` so a test can drive time without waiting.
+`JourneyBuffer`, `Scheduler`, `SettingsStore` and `Secrets` are Effect `Context.Service`
+classes provided by a runtime `Layer`. The buffer indexes hints and prunes by age. The
+scheduler exposes `runDue(now)` so a test can drive time without waiting.
 
 ### Sink
 
@@ -285,7 +288,7 @@ interface Sink {
   accepts: readonly ("spans" | "journey")[];
   sampling?: SamplingPolicy;
   render(journey: Journey): SinkBatch | null;   // pure
-  write(batch: SinkBatch): Promise<void>;       // idempotent
+  write(batch: SinkBatch): Effect<void, SinkError>; // idempotent
 }
 ```
 
@@ -408,22 +411,25 @@ Enforced by dependency-cruiser:
 - Runtimes cannot import providers or sinks. Composition lives in examples.
 - Only the Node runtime, tooling and examples may import `node:*`.
 - Only the Cloudflare runtime may import `@cloudflare/*`.
-- `schema`, `otlp`, `adapter-kit` and `browser` have no runtime dependency.
+- `schema`, `otlp` and `browser` have no runtime dependency.
+- `adapter-kit`, `stitcher`, provider server exports, runtimes and sinks use Effect v4.
 
 ### Two-zone module boundary
 
 The edge zone ships to browsers and login pages and is plain, dependency-free TypeScript.
-The server zone may adopt Effect. Public contracts are Promise based.
+The server zone is Effect v4: `Schema` at every boundary, `Context.Service` and `Layer` for
+dependencies, and `Schema.TaggedError` for expected failures. Provider packages expose the
+browser helper at `/browser` and the Effect adapter at the package root.
 
-### Why plain TypeScript, no Effect, Hono or Drizzle
+### Why Effect v4 on the server
 
-ADR-0003. The surface is one JSON handler with four routes. A Fetch port is smaller than a
-framework, and Effect earns its place when retries, layers and persistence arrive. The cost
-is real: no typed error channel in the stitcher, and hand-written decoders in `decode.ts`.
+ADR-0003. The stitcher grew a second store, typed failures, retries and multi-tenant routing.
+Effect gives one model for validation, dependency injection, failure and concurrency across
+Node and Workers. The cost is a larger server dependency; the browser edge stays plain so
+the SDK budget is unaffected.
 
-**Rebuttal point.** This is the decision most likely to age badly. If the stitcher grows a
-second store, retries and multi-tenant routing, the hand-written decoder and the manual
-error handling become the expensive part.
+**Rebuttal point.** Effect is a large dependency for one JSON handler. If the server surface
+shrinks back to one route with one store, the layers and schemas become overhead.
 
 ---
 
@@ -434,8 +440,8 @@ error handling become the expensive part.
 | New MIT repo | Build inside nooks | If the project stays private and commercial |
 | Paid service in its own repo | One repo with an open core | If licence friction hurts adoption |
 | Plan's folder tiers, not nooks tiers | `products/platform/domain` | If deployables multiply |
-| Two-zone Effect boundary | Effect everywhere | If the browser budget is dropped |
-| Plain TS plus Fetch port | Hono, Drizzle, Effect | If routes or storage grow |
+| Two-zone boundary: Effect server, plain edge | Effect everywhere | If the browser budget is dropped |
+| Effect server plus Fetch port | Hono, Drizzle, plain TS | If the browser budget must cover the server |
 | One DO per tenant | One DO per journey | A persistent hint directory |
 | In-process pending events | Persistent pending store | Multi-instance Node deployments |
 | Deterministic sampling | Random sampling | If statistical fidelity beats replayability |
@@ -499,4 +505,4 @@ Full detail is in `docs/verification.md`.
 5. Should sampling move before the join once volume is the binding constraint?
 6. Does the wide event need the full step array, or is a count plus the root enough for
    logs?
-7. When does plain TypeScript stop paying for itself and Effect, Hono or Drizzle start?
+7. Does Effect's runtime cost on Workers stay acceptable as the adapter matrix grows?

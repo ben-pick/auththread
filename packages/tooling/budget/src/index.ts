@@ -35,18 +35,23 @@ export const withinBudget = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** The import target of one export entry, read from a package manifest. */
+const exportTarget = (dir: string, value: unknown): string | undefined => {
+  if (typeof value === "string") return resolve(dir, value);
+  if (!isRecord(value)) return undefined;
+  for (const condition of ["import", "default", "module"]) {
+    const target = value[condition];
+    if (typeof target === "string") return resolve(dir, target);
+  }
+  return undefined;
+};
+
 /** The import target of a workspace package, read from its manifest. */
 const packageEntry = (dir: string, exportsField: unknown): string => {
   if (typeof exportsField === "string") return resolve(dir, exportsField);
   if (isRecord(exportsField)) {
-    const root = exportsField["."];
-    if (typeof root === "string") return resolve(dir, root);
-    if (isRecord(root)) {
-      for (const condition of ["import", "default", "module"]) {
-        const target = root[condition];
-        if (typeof target === "string") return resolve(dir, target);
-      }
-    }
+    const root = exportTarget(dir, exportsField["."]);
+    if (root !== undefined) return root;
   }
   return resolve(dir, "src/index.ts");
 };
@@ -70,6 +75,15 @@ const workspaceEntries = (root: string): Map<string, string> => {
       };
       if (typeof pkg.name !== "string") continue;
       entries.set(pkg.name, packageEntry(dir, pkg.exports));
+
+      if (!isRecord(pkg.exports)) continue;
+      for (const [key, value] of Object.entries(pkg.exports)) {
+        if (!key.startsWith("./") || key === "./package.json") continue;
+        const target = exportTarget(dir, value);
+        if (target !== undefined) {
+          entries.set(`${pkg.name}/${key.slice(2)}`, target);
+        }
+      }
     }
   }
   return entries;
@@ -117,6 +131,16 @@ export const bundleFile = (
  * The SDK alone, with no demo app code, so the budget measures the library and
  * not the example that happens to import it.
  */
+const oidcBrowserSpecifier = (root: string): string => {
+  const manifest = resolve(root, "packages/providers/oidc/package.json");
+  const pkg = JSON.parse(readFileSync(manifest, "utf8")) as {
+    exports?: unknown;
+  };
+  return isRecord(pkg.exports) && pkg.exports["./browser"] !== undefined
+    ? "@auththread/oidc/browser"
+    : "@auththread/oidc";
+};
+
 export const bundleBrowserSdk = (
   root: string = REPO_ROOT,
 ): Promise<BundleResult> =>
@@ -124,7 +148,7 @@ export const bundleBrowserSdk = (
     stdin: {
       contents: [
         'import { init } from "@auththread/browser";',
-        'import { oidcBrowser } from "@auththread/oidc";',
+        `import { oidcBrowser } from "${oidcBrowserSpecifier(root)}";`,
         "globalThis.auththread = { init, oidcBrowser };",
       ].join("\n"),
       resolveDir: keycloakDir(root),

@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./actions": "./src/actions.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./browser": "./src/browser.ts"
   },
   "files": [
     "src",
@@ -19,9 +20,11 @@
   },
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
-    "@auththread/schema": "workspace:*"
+    "@auththread/schema": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
