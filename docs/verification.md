@@ -5,7 +5,7 @@ Every claim in the README is checked here, or labelled as not checked.
 ## Verified in this repo
 
 Run `mise exec -- pnpm check`. It runs typecheck, Biome, every test, dependency-cruiser,
-actionlint and the agent file checks. Current result: 21 test files, 105 tests, no violations.
+actionlint and the agent file checks. Current result: 21 test files, 113 tests, no violations.
 
 - **One journey from recorded fragments.** `pnpm demo` replays the Auth0 deny fixture through
   the real stitcher and prints one wide event with five ordered steps: login start, UI screen,
@@ -31,6 +31,10 @@ actionlint and the agent file checks. Current result: 21 test files, 105 tests, 
   `runRuntimeConformance`.
 - **Sink conformance.** OTLP, wide event and webhook pass `runSinkConformance`, including
   HMAC verification and webhook retry behaviour.
+- **Exact Auth0 transaction join.** Verified on a test tenant, then implemented: the Action
+  sends `auth.transaction.id`, the feed parses `details.transaction_id`, and the stitcher
+  joins exactly per tenant. Tests cover failure then success, success then failure, pending
+  adoption by transaction, and a transaction lookup outside the window.
 - **Boundaries.** `pnpm boundaries` reports no violation across 78 modules.
 - **Per-tenant routing.** `createKeyDirectory` resolves each tenant key, rejects missing and
   unknown keys, and refuses a directory with a shared key or duplicate tenant.

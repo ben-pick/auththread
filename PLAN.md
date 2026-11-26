@@ -576,7 +576,9 @@ Official deep adapters: Cognito, then Okta or Supabase. Terraform modules for AW
 ## 17. Open questions
 
 1. Name, plus npm scope and domain.
-2. Do Auth0 Log Stream login events carry a session identifier usable for joins?
+2. Answered 2026-11-26: yes. On a test tenant, `details.transaction_id` matched
+   `event.transaction.id`, and `details.session_id` matched `event.session.id`. The
+   transaction is the primary join; a session spans logins.
 3. Does an un-awaited `fetch` complete after an Auth0 Action returns? (Design assumes no.)
 4. Limits on the number and length of Auth0 `ext-*` params.
 5. Can each provider's hook runtime `require` our wrapper package? (Auth0 Actions npm deps, Lambda layers, Firebase functions: verify per provider.)

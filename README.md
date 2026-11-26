@@ -51,8 +51,9 @@ See `examples/keycloak-compose/README.md`.
    - `oidc`: nothing. The browser SDK keys the journey on its own state round trip.
 3. Hook wrappers and page plugins read the ID and emit spans to the stitcher. The browser
    SDK queues spans and flushes on the redirect, the callback and a page hide.
-4. Provider feed items are normalised, then joined by an exact trace ID when present,
-   otherwise by a user hash inside the same tenant and a two minute window.
+4. Provider feed items are normalised, then joined by an exact trace ID or exact provider
+   transaction ID when present, otherwise by a user hash inside the same tenant and a two
+   minute window.
 5. The stitcher finalises on a quiet period, derives the root span ID as
    `sha256("root:" + traceId)[0..16]`, and writes the journey to every sink.
 
@@ -99,8 +100,8 @@ page snippet supply chain is manual by ADR-0008. Both are recorded rather than i
 Span names: `auth.journey`, `auth.app.login_start`, `auth.app.callback`,
 `auth.app.token_exchange`, `auth.ui.screen`, `auth.hook.execute`, `auth.provider.event`.
 
-Attributes are `auth.*`, for example `auth.journey.kind`, `auth.method`, `auth.ui.step`,
-`auth.hook.decision`, `auth.error.code`, `auth.outcome`. Vendor detail is limited to `auth.method.vendor_name`,
+Attributes are `auth.*`, for example `auth.journey.kind`, `auth.transaction.id`,
+`auth.method`, `auth.ui.step`, `auth.hook.decision`, `auth.error.code`, `auth.outcome`. Vendor detail is limited to `auth.method.vendor_name`,
 `auth.ui.vendor_screen` and `auth.error.vendor_code`. See `docs/schema.md`.
 
 Redaction runs twice, in the emitter and in the stitcher. A missing salt drops identifiers

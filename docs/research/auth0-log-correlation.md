@@ -69,6 +69,18 @@ That matters for outcome derivation.
 A failure event can arrive before the Action's hook span. Pending adoption therefore has to
 match on transaction ID, not only on user hash.
 
+## Implemented
+
+The transaction join landed after the tenant test:
+
+- The Action wrapper sends `auth.transaction.id`.
+- The Log Stream parser reads `details.transaction_id`.
+- The buffer indexes transactions per tenant and exposes `findByTransaction`.
+- A transaction match is exact and sets the trace ID on the event.
+- Pending events are adopted by transaction as well as user hash.
+- Outcome follows the latest terminal signal, so a failed attempt followed by a success is a
+  successful journey.
+
 ## What this means for auththread
 
 `ext-trace_id` remains the only customer-controlled value that survives `/authorize` into the

@@ -17,11 +17,11 @@ Two outputs come from the same journey: OTel spans and one wide event.
 ## Attributes
 
 `auth.provider`, `auth.tenant`, `auth.client_id`, `auth.user.hash`, `auth.journey.kind`,
-`auth.method`, `auth.method.vendor_name`, `auth.ui.step`, `auth.ui.vendor_screen`,
-`auth.hook.name`, `auth.hook.type`, `auth.hook.stage`, `auth.hook.version`,
-`auth.hook.decision`, `auth.hook.claims_set`, `auth.error.code`, `auth.error.vendor_code`,
-`auth.error.source`, `auth.outcome`, `auth.abandoned_at`, `auth.correlation`,
-`auth.passkey.result`.
+`auth.transaction.id`, `auth.method`, `auth.method.vendor_name`, `auth.ui.step`,
+`auth.ui.vendor_screen`, `auth.hook.name`, `auth.hook.type`, `auth.hook.stage`,
+`auth.hook.version`, `auth.hook.decision`, `auth.hook.claims_set`, `auth.error.code`,
+`auth.error.vendor_code`, `auth.error.source`, `auth.outcome`, `auth.abandoned_at`,
+`auth.correlation`, `auth.passkey.result`.
 
 Neutral values: `auth.journey.kind` is `login`, `signup`, `reset` or `step_up`.
 `auth.method` is `password`, `social`, `enterprise_sso`, `passwordless`, `passkey` or `mfa`.
@@ -30,6 +30,13 @@ Neutral values: `auth.journey.kind` is `login`, `signup`, `reset` or `step_up`.
 
 The journey kind comes from the explicit span attribute, then a signup event, then defaults to
 `login`. That keeps a signup and a login from looking identical in a dashboard.
+
+`auth.transaction.id` is an opaque per-transaction identifier. When both a hook and a provider
+event carry it, the stitcher joins exactly and records `auth.correlation: exact`. It is not
+customer-settable; Auth0 and the hook both receive it from the provider.
+
+Outcome follows the latest terminal signal. A success after a failed attempt makes the journey
+`success`, and both attempts remain as steps. A denial is terminal.
 
 Vendor values go in the three `vendor_*` slots and nowhere else. That is what lets one
 dashboard work for every provider.

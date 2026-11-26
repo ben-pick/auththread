@@ -79,18 +79,21 @@ The hard problem is that a login crosses four systems that share nothing.
    - Generic OIDC: nothing. The SDK keys the journey on its own state round trip and only
      browser spans exist until a hook or feed joins.
 3. Hooks and page plugins read the ID and emit spans.
-4. Feed events either carry the ID in their details or carry hints.
-5. The stitcher joins an event by exact ID when present, otherwise by user hash inside the
-   same tenant and a two minute window. A client ID alone never joins, because a client is
-   shared by every user of an app.
+4. Feed events either carry the ID in their details, a transaction ID, or hints.
+5. The stitcher joins an event by exact trace ID or exact transaction ID when present,
+   otherwise by user hash inside the same tenant and a two minute window. A client ID alone
+   never joins, because a client is shared by every user of an app.
 6. Finalisation derives a deterministic root span.
 
-Hints are scoped by tenant and matched on the user hash. A client ID is carried but never
-enough to join, because a client is shared by every user of an app. The buffer indexes hint
-values when a span arrives, so a later event with no trace ID can still find the journey.
+A transaction ID is an exact key, checked before hints. Auth0 supplies one on both the
+post-login Action and the log event. Hints are scoped by tenant and matched on the user hash.
+A client ID is carried but never enough to join, because a client is shared by every user of
+an app. The buffer indexes hint values and transaction IDs when a span arrives, so a later
+event can still find the journey.
 
 An event that arrives before any span goes into an in-process pending list. The next span
-whose hints match adopts it. Pending entries expire after the TTL and are capped at 1000.
+whose transaction or hints match adopts it. Pending entries expire after the TTL and are
+capped at 1000.
 
 **Known limit.** The pending list is per stitcher instance and not persisted. In a
 multi-instance deployment an event that arrives before its span, and lands on a different
@@ -161,17 +164,20 @@ Wide event: one flat record with `schemaVersion`, `event: "auth.journey"`, root 
 
 ### Outcome derivation
 
-Precedence, highest first:
+The latest terminal signal wins:
 
-1. An explicit `auth.outcome` on any span.
-2. A hook decision of `deny` gives `denied`.
-3. An error span or a failure event gives `failed`.
-4. `auth.abandoned_at` gives `abandoned`.
-5. A success event or an ok callback gives `success`.
-6. Anything else is `abandoned`.
+1. A denial is terminal. `denied` regardless of what follows.
+2. Otherwise collect success signals (a success event, an ok callback), failure signals (an
+   error span, a failure event) and abandonment markers.
+3. Sort by time. A later success overrides an earlier failure, and a later failure overrides
+   an earlier success.
+4. With no signal at all, the journey is `abandoned`.
 
-Precedence is a domain rule expressed once, in `deriveOutcome`. It is not scattered through
-the emitters.
+This matters because a transaction can contain a failed attempt and a successful retry. The
+journey outcome is `success`, and both attempts remain as steps.
+
+Outcome is a domain rule expressed once, in `deriveOutcome`. It is not scattered through the
+emitters.
 
 ### Root attributes
 
@@ -208,19 +214,21 @@ provider's logs can re-identify a person. The claim is "no PII by default", not 
 
 Ingest a span:
 
-1. Redact with the tenant salt.
+1. Redact with the tenant salt and stamp the authenticated tenant.
 2. Append to the buffer, keyed by trace ID and item ID. Duplicate IDs collapse.
-3. Index hint values against the trace.
-4. Adopt any pending event whose hints match.
+3. Index hint values and the transaction ID against the trace.
+4. Adopt any pending event whose transaction or hints match.
 5. Move the finalise deadline forward.
 
 Ingest an event:
 
 1. Ask the adapter to classify it into an outcome and neutral error code.
 2. Fill the tenant, hash raw identifiers, redact.
-3. If it carries a trace ID, append to that trace.
-4. Otherwise ask the buffer for candidates by tenant and user hash.
-5. If there is one, append to the best candidate. If not, park it as pending.
+3. If it carries a trace ID, append to that trace as exact.
+4. Otherwise, if it carries a transaction ID, look the transaction up exactly and append as
+   exact.
+5. Otherwise ask the buffer for candidates by tenant and user hash, and append as inferred.
+6. If nothing matches, park it as pending.
 
 Finalise:
 
@@ -425,6 +433,8 @@ error handling become the expensive part.
 | In-process pending events | Persistent pending store | Multi-instance Node deployments |
 | Deterministic sampling | Random sampling | If statistical fidelity beats replayability |
 | Hint join requires a user hash and the same tenant | Join on client ID too | If providers expose a per-session client |
+| Exact transaction join when a provider exposes one | Hash hints only | If a provider gives no transaction ID |
+| Latest terminal signal decides the outcome | Any failure wins | Never, once retries share a transaction |
 | Deadlines never sit in the past | Trust client timestamps | Never for a quiet period |
 | New login attempt rotates the trace | Keep one trace per tab | If an app performs several logins in one redirect |
 | Batch browser spans | One request per span | If an edge runtime rejects batched beacons |
@@ -455,7 +465,7 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 21 test files, 105 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 21 test files, 113 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
