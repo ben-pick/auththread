@@ -50,6 +50,8 @@ Repo-authored workflow skills live in `.agents/skills/`:
   `path:line — rule — problem — fix`.
 - `write-pr` — when writing or updating a PR description; fill the template verbatim.
 - `add-vendor-skill` — when adding or updating a third-party skill; pin it, lock it, check it.
+- `effect-code` — before writing or reviewing Effect code; read the guide in
+  `node_modules/effect/AGENTS.md` and the server rules.
 
 Vendored skills are pinned copies (ADR-0012):
 
