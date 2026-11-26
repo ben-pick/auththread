@@ -36,7 +36,7 @@ dashboard work for every provider.
 
 ## Wide event
 
-One flat record per journey. The published JSON Schema is
+One flat record per journey, with `kind` alongside the outcome. The published JSON Schema is
 `packages/core/schema/schema/wide-event-1.json`. It carries the root attributes plus
 `steps[]` with name, type, offset, duration, decision and error code, and
 `correlationCounts` with how many provider events joined exactly or by hint.
