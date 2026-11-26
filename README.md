@@ -7,6 +7,8 @@
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933)](#compatibility)
 [![otel](https://img.shields.io/badge/OpenTelemetry-optional-425CC7)](https://opentelemetry.io)
 
+![One login, one trace: the auththread demo](docs/assets/auththread-demo.jpg)
+
 Auththread stitches the app, the hosted login page, server-side hooks and provider logs into
 one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
 Auththread is the solution!
