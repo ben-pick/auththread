@@ -194,6 +194,8 @@ the stitcher agree without a round trip.
 | [`@auththread/otlp`](packages/core/otlp) | OTLP/HTTP JSON encoder and exporters |
 | [`@auththread/adapter-kit`](packages/core/adapter-kit) | Contracts, memory runtime, conformance suites, corpus |
 | [`@auththread/stitcher`](packages/core/stitcher) | `createStitcher`, the Fetch handler and the join |
+| [`@auththread/config`](packages/core/config) | Shared tenant config parsing for every runtime |
+| [`@auththread/sdk`](packages/sdk) | Server SDK facade: neutral core, `./node`, `./cloudflare` |
 | [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
 | [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter |
 | [`@auththread/auth0`](packages/providers/auth0) | Adapter, browser helper, Action wrapper, page snippet |
@@ -204,27 +206,43 @@ the stitcher agree without a round trip.
 | [`@auththread/sink-webhook`](packages/sinks/webhook) | Signed journey JSON |
 | [`@auththread/sink-object-store`](packages/sinks/object-store) | NDJSON journeys in S3, R2 or MinIO |
 
+### Deployment and local artifacts
+
+| Artifact | Path | Use |
+| --- | --- | --- |
+| Docker image | `Dockerfile` | One bundled non-root server image, amd64 and arm64 |
+| Local compose | [`examples/local-compose`](examples/local-compose) | Server + Grafana + Tempo + Loki for local development |
+| Cloudflare Worker | [`templates/cloudflare-worker`](templates/cloudflare-worker) | Standalone `wrangler deploy` / Deploy button template |
+
+The install contract is in [`docs/install-contract.md`](docs/install-contract.md).
+Runtime adapter rules are in [`docs/runtime-adapters.md`](docs/runtime-adapters.md).
+Publishing is described in [`docs/publishing.md`](docs/publishing.md). Terraform and Pulumi
+are deferred; the install contract is the seam they will wrap.
+
 ## Compatibility
 
-- **Node**: 24 or newer. The source runs without a build step.
+- **Node**: 24 or newer for the server. The SQLite runtime needs 22.5 or newer.
+- **Source**: the workspace runs TypeScript directly.
 - **Package manager**: pnpm 12, through mise.
 - **Cloudflare**: Workers with Durable Objects and alarms.
 - **Browsers**: `sessionStorage`, `fetch` with keepalive, WebCrypto for hashing.
 - **Backends**: any OTLP/HTTP JSON endpoint, log pipeline, HTTP receiver, or S3-compatible
   object store.
-- **Not yet**: npm publishing, Redis or Postgres storage, a UI or trace store.
+- **Not yet**: the first npm publish, Redis or Postgres storage, a UI or trace store.
 
 ## Verification
 
 ```sh
-mise exec -- pnpm check   # types, lint, 137 tests, boundaries, budgets, agent files
+mise exec -- pnpm check   # types, lint, tests, boundaries, budgets, agent files
+mise exec -- pnpm build   # dist output for every public package
+mise exec -- pnpm pack:check  # tarball contents, protocols, declaration imports, publint
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
-mise exec -- pnpm budget  # browser SDK 2,659 B gzip, snippet 936 B gzip
+mise exec -- pnpm budget  # browser SDK 2,506 B gzip, snippet 936 B gzip
 ```
 
-Current status: 25 test files, 137 tests, 97 modules, no boundary violations. See
+Current status: 28 test files, 142 tests, 108 modules, no boundary violations. See
 [`docs/verification.md`](docs/verification.md) for what is proven and what is not.
 
 ## Roadmap
@@ -241,21 +259,23 @@ Current status: 25 test files, 137 tests, 97 modules, no boundary violations. Se
 - [x] Wide event, webhook and object store sinks
 - [x] Conformance suites, cross-runtime equality, shared corpus
 - [x] Keycloak compose, Node image and Worker examples
+- [x] Canonical Node runtime entrypoint and bundled server image
 - [x] DuckDB queries verified against the object store
 - [x] Bundle budgets in CI
 
 ### Next
 
-- [ ] Publish packages with Changesets and npm provenance
+- [x] Publish pipeline: dist builds, Changesets, pack checks, npm provenance and release workflow
 - [ ] Keycloak L2 events through the Admin API and L4 through a login theme
 - [ ] Auth0 page error detection for failed-only logins
-- [ ] Ship the Auth0 Action wrapper in a form Actions can require
+- [x] Ship the Auth0 Action wrapper in a form Actions can require (ESM and CJS)
 - [ ] Token exchange error status in the browser SDK
 - [ ] Signed page snippet release with SRI
 - [ ] Redis, Postgres and D1 storage backends
 - [ ] Parquet object store and predicate pushdown
 - [ ] Native ClickHouse sink
 - [ ] Run the Keycloak compose stack in CI
+- [ ] Run the Cloudflare template against published packages in CI
 
 ### Later and community
 

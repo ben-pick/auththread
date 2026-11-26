@@ -1,0 +1,29 @@
+{
+  "name": "@auththread/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node -e \"console.log('no unit tests')\"",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/server.mjs"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:^",
+    "@auththread/auth0": "workspace:^",
+    "@auththread/config": "workspace:^",
+    "@auththread/oidc": "workspace:^",
+    "@auththread/otlp": "workspace:^",
+    "@auththread/runtime-node": "workspace:^",
+    "@auththread/sink-otlp": "workspace:^",
+    "@auththread/sink-webhook": "workspace:^",
+    "@auththread/sink-wide-event": "workspace:^",
+    "@auththread/sink-object-store": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "esbuild": "0.28.2"
+  }
+}

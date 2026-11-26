@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "auththread",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "JOURNEY", "class_name": "JourneyDurableObject" }
+    ]
+  },
+  // Use `exports` for a new Worker. It is mutually exclusive with `migrations`.
+  // If you need `wrangler versions upload` or gradual deployments, switch to
+  // a legacy migrations array instead.
+  "exports": {
+    "JourneyDurableObject": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "secrets": {
+    "required": ["AUTHTHREAD_TENANTS"]
+  },
+  "observability": { "enabled": true }
+}

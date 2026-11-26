@@ -231,12 +231,12 @@ An adapter is **supported** when its conformance job is green in CI. Anything el
 | --- | --- | --- | --- | --- |
 | Cloudflare Workers | Durable Object per journey | DO alarms | D1 | **v0.1** |
 | Node / Docker (any cloud: ECS, Cloud Run, Azure Container Apps, Fly, bare VM) | Memory (single node) or Redis | In-process timer or Redis sorted set | SQLite or Postgres | **v0.1** |
-| Kubernetes | Redis | Redis | Postgres | Helm chart, Phase 2 |
+| Kubernetes | Redis | Redis | Postgres | Kubernetes example, deferred |
 | AWS Lambda + API Gateway | DynamoDB (TTL) | EventBridge Scheduler or DynamoDB TTL stream | Postgres/DynamoDB | Community |
 | Vercel / Netlify functions | Upstash Redis | Redis + cron | Postgres | Community |
 | Deno Deploy / Bun | Redis or Deno KV | Redis / KV | Postgres | Community |
 
-Infrastructure templates live in `deploy/`: Terraform modules for AWS, GCP and Azure, plus a Helm chart. They're thin wrappers around the Docker image.
+Deployment artifacts live in `templates/` and `examples/local-compose`. Terraform and Pulumi are deferred until a named user needs them.
 
 ### 6.7 Sinks (observability-agnostic output)
 
@@ -368,7 +368,7 @@ auththread/
 │  ├─ otlp/              # default; spans (+ optional OTLP logs)
 │  ├─ wide-event/        # journey JSON to stdout
 │  └─ webhook/           # journey JSON, HMAC-signed
-├─ deploy/               # (Phase 2) Helm chart, Terraform modules for AWS/GCP/Azure
+├─ templates/            # Cloudflare Worker and future deployment kits
 ├─ integrations/         # dashboards + saved queries on neutral attributes
 │  ├─ grafana/           # Tempo (spans) + Loki (wide events)
 │  ├─ datadog/
@@ -485,7 +485,7 @@ thread.callback(window.location); // on the callback route
 1. Copy `runtimes/_template`.
 2. Implement `JourneyBuffer`, `Scheduler`, `SettingsStore` and `Secrets`.
 3. Make `runRuntimeConformance` and `runEndToEndConformance` pass.
-4. Add a deploy guide (and a Terraform module or Helm values if relevant).
+4. Add a deploy guide and make the install contract explicit.
 
 **Maintenance:** `CODEOWNERS` assigns each adapter a maintainer. Adapters without one for 90 days drop to "experimental".
 
@@ -516,7 +516,7 @@ thread.callback(window.location); // on the callback route
 
 ### Phase 2: Paid wedge (weeks 9-16, separate repo)
 
-Coverage map (open source, here), replay tests and PR checks (paid), built on neutral `auth.hook.*` spans so they extend to every provider with L3 hooks. Helm chart in `deploy/`.
+Coverage map (open source, here), replay tests and PR checks (paid), built on neutral `auth.hook.*` spans so they extend to every provider with L3 hooks. Deployment artifacts are deferred until a named user needs them.
 
 ### Phase 3: Expand (months 5-9)
 

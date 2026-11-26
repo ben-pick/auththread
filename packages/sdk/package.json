@@ -1,0 +1,82 @@
+{
+  "name": "@auththread/sdk",
+  "version": "0.1.0",
+  "description": "Infrastructure-neutral server SDK: compose the stitcher or use the Node and Cloudflare runtimes.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./cloudflare": "./src/cloudflare.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache",
+    "build": "node ../../scripts/build-package.ts",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:^",
+    "@auththread/config": "workspace:^",
+    "@auththread/runtime-cloudflare": "workspace:^",
+    "@auththread/runtime-node": "workspace:^",
+    "@auththread/schema": "workspace:^",
+    "@auththread/stitcher": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ben-pick/auththread.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/ben-pick/auththread#readme",
+  "bugs": {
+    "url": "https://github.com/ben-pick/auththread/issues"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./node": {
+        "types": "./dist/node.d.ts",
+        "import": "./dist/node.js"
+      },
+      "./cloudflare": {
+        "types": "./dist/cloudflare.d.ts",
+        "import": "./dist/cloudflare.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "author": "Auththread contributors",
+  "keywords": [
+    "auth",
+    "observability",
+    "sdk",
+    "node",
+    "cloudflare",
+    "opentelemetry"
+  ]
+}

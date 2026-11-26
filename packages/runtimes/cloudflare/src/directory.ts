@@ -2,7 +2,8 @@ import { sha256Hex } from "@auththread/schema";
 
 export interface DirectoryTenant {
   readonly tenant: string;
-  readonly apiKey: string;
+  readonly apiKey?: string;
+  readonly apiKeyHash?: string;
 }
 
 export interface KeyDirectory {
@@ -37,7 +38,10 @@ export function createKeyDirectory(
       throw new Error(`duplicate tenant in the directory: ${tenant.tenant}`);
     }
     names.add(tenant.tenant);
-    const hash = sha256Hex(tenant.apiKey);
+    if (tenant.apiKey === undefined && tenant.apiKeyHash === undefined) {
+      throw new Error(`tenant ${tenant.tenant} needs an api key or hash`);
+    }
+    const hash = tenant.apiKeyHash ?? sha256Hex(tenant.apiKey ?? "");
     if (byHash.has(hash)) {
       throw new Error("two tenants share the same API key");
     }

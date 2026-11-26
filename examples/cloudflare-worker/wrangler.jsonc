@@ -9,5 +9,6 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["JourneyDurableObject"] }
   ],
+  "secrets": { "required": ["AUTHTHREAD_TENANTS"] },
   "observability": { "enabled": true }
 }

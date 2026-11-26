@@ -1,5 +1,7 @@
 packages:
   - "packages/*/*"
+  - "packages/sdk"
+  - "apps/*"
   - "examples/*"
 
 catalog:

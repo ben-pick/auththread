@@ -21,7 +21,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "web/app.js"]
     },
     "check": {
       "dependsOn": ["typecheck", "lint", "test"],

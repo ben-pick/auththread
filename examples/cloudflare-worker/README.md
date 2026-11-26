@@ -1,5 +1,7 @@
 # Cloudflare Worker example
 
+> For an external deployment, use the standalone [`templates/cloudflare-worker`](../../templates/cloudflare-worker). This example lives in the workspace and is for development.
+
 ```sh
 pnpm --filter @auththread/example-cloudflare-worker add -D wrangler
 pnpm --filter @auththread/example-cloudflare-worker exec wrangler deploy

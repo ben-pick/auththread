@@ -15,6 +15,9 @@ paths:
 | Tooling | `packages/tooling/*` | anything, dev only |
 
 - Core never imports an adapter.
+- `packages/sdk` is the one facade allowed to import runtime adapters; keep it a
+  re-export layer, not a home for logic.
+- `templates/**` and `examples/local-compose/**` are outside the package graph.
 - Providers never import runtimes or sinks.
 - Runtimes never import providers or sinks.
 - Only the Node runtime, tooling and examples may import Node built-ins.

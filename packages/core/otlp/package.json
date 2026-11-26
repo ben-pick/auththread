@@ -9,17 +9,57 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "src"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache",
+    "build": "node ../../../scripts/build-package.ts",
+    "prepack": "pnpm build"
   },
   "dependencies": {
-    "@auththread/schema": "workspace:*"
+    "@auththread/schema": "workspace:^"
   },
   "devDependencies": {
     "typescript": "catalog:",
     "vitest": "catalog:"
-  }
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ben-pick/auththread.git",
+    "directory": "packages/core/otlp"
+  },
+  "homepage": "https://github.com/ben-pick/auththread#readme",
+  "bugs": {
+    "url": "https://github.com/ben-pick/auththread/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "author": "Auththread contributors",
+  "keywords": [
+    "auth",
+    "observability",
+    "opentelemetry",
+    "otlp",
+    "exporter"
+  ]
 }

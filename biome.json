@@ -8,7 +8,8 @@
       "!**/dist",
       "!**/.turbo",
       "!**/coverage",
-      "!**/*.md"
+      "!**/*.md",
+      "!templates/**/*.jsonc"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

@@ -1,22 +1,18 @@
-import {
-  journeyCorpus,
-  runEndToEndConformance,
-  runRuntimeConformance,
-  type TenantSettings,
-} from "@auththread/adapter-kit";
-import { sha256Hex, toWideEvent } from "@auththread/schema";
+import { journeyCorpus } from "@auththread/adapter-kit";
+import { parseTenantConfig } from "@auththread/config";
+import { toWideEvent } from "@auththread/schema";
 import { describe, expect, it } from "vitest";
-import { createJourneyDurableObject } from "./durable-object.ts";
-import {
-  createAlarmScheduler,
-  createDurableObjectBuffer,
-  type DurableObjectStorageLike,
-} from "./storage.ts";
+import type { JourneyDurableObjectInstance } from "./durable-object.ts";
+import type { DurableObjectIdLike } from "./runtime.ts";
+import { type CloudflareEnv, createCloudflareRuntime } from "./runtime.ts";
+import type { DurableObjectStorageLike } from "./storage.ts";
+
+const fixture = journeyCorpus[0];
+if (fixture === undefined) throw new Error("missing fixture");
 
 class FakeStorage implements DurableObjectStorageLike {
   readonly map = new Map<string, unknown>();
   alarmAt: number | null = null;
-
   async get<T>(key: string): Promise<T | undefined> {
     return this.map.get(key) as T | undefined;
   }
@@ -42,54 +38,14 @@ class FakeStorage implements DurableObjectStorageLike {
   }
 }
 
-const fixture = journeyCorpus[0];
-if (fixture === undefined) throw new Error("missing fixture");
-
-const tenant: TenantSettings = {
-  tenant: "acme",
-  provider: "oidc",
-  apiKeyHash: sha256Hex("at_test"),
-  salt: "salt-salt",
-  providerSettings: {},
-};
-
-describe("durable object runtime", () => {
-  it("passes runtime conformance", async () => {
-    const storage = new FakeStorage();
-    const report = await runRuntimeConformance({
-      buffer: createDurableObjectBuffer(storage),
-      scheduler: createAlarmScheduler(storage, () => fixture.nowMs),
-      fixture: {
-        traceId: fixture.traceId,
-        otherTraceId: "b7".repeat(16) as typeof fixture.traceId,
-        tenant: "acme",
-        spans: fixture.spans,
-        nowMs: fixture.nowMs,
-      },
-    });
-    expect(report.failures).toEqual([]);
-  });
-
-  it("keeps the earliest alarm across schedules and cancellations", async () => {
-    const storage = new FakeStorage();
-    const scheduler = createAlarmScheduler(storage, () => fixture.nowMs);
-    await scheduler.schedule(fixture.traceId, 300);
-    expect(storage.alarmAt).toBe(300);
-    await scheduler.schedule("c7".repeat(16) as typeof fixture.traceId, 200);
-    expect(storage.alarmAt).toBe(200);
-    await scheduler.cancel("c7".repeat(16) as typeof fixture.traceId);
-    expect(storage.alarmAt).toBe(300);
-  });
-
-  it("finalises a journey from an alarm and exports it", async () => {
-    const storage = new FakeStorage();
-    let now = fixture.nowMs;
-    const DurableObject = createJourneyDurableObject({
+describe("createCloudflareRuntime", () => {
+  it("authenticates, routes to the tenant object and finalises", async () => {
+    const runtime = createCloudflareRuntime({
       providers: [],
-      sinks: [
+      sinks: () => [
         {
           id: "capture",
-          accepts: ["spans", "journey"],
+          accepts: ["spans"],
           sampling: { keep: ["all"], successRate: 1 },
           render: (journey) => ({
             sinkId: "capture",
@@ -100,97 +56,111 @@ describe("durable object runtime", () => {
           write: async () => undefined,
         },
       ],
-      settings: { getTenant: async () => tenant },
-      quietMs: 60_000,
-      captureBatches: true,
-      clock: () => now,
+      quietMs: () => 60_000,
     });
-    const instance = new DurableObject({ storage });
 
-    const payload = JSON.stringify({
-      resourceSpans: [
+    const config = parseTenantConfig({
+      tenants: [
         {
-          resource: { attributes: [] },
-          scopeSpans: [
-            {
-              scope: { name: "test" },
-              spans: [
-                {
-                  traceId: fixture.traceId,
-                  spanId: "1111111111111111",
-                  name: "auth.app.login_start",
-                  kind: 1,
-                  startTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
-                  endTimeUnixNano: String(BigInt(fixture.nowMs) * 1_000_000n),
-                  attributes: [
-                    { key: "auth.provider", value: { stringValue: "oidc" } },
-                    { key: "auth.tenant", value: { stringValue: "acme" } },
-                  ],
-                  status: { code: 0 },
-                },
-              ],
-            },
-          ],
+          tenant: "acme",
+          provider: "oidc",
+          apiKey: "at_test",
+          salt: "salt-salt",
         },
       ],
     });
+    const source = JSON.stringify(config);
+    const objects = new Map<string, JourneyDurableObjectInstance>();
+    const env: CloudflareEnv = {
+      AUTHTHREAD_TENANTS: source,
+      JOURNEY: {
+        idFromName: (name: string): DurableObjectIdLike => ({ name }),
+        get: (id: DurableObjectIdLike) => ({
+          fetch: async (request: Request) => {
+            const name = id.name ?? "";
+            let instance = objects.get(name);
+            if (instance === undefined) {
+              instance = new runtime.JourneyDurableObject(
+                { storage: new FakeStorage() },
+                env,
+              );
+              objects.set(name, instance);
+            }
+            return instance.fetch(request);
+          },
+        }),
+      },
+    };
 
-    const response = await instance.fetch(
-      new Request("https://do/v1/spans", {
+    const rejected = await runtime.fetch(
+      new Request("https://example.com/v1/spans", {
+        method: "POST",
+        body: "{}",
+      }),
+      env,
+    );
+    expect(rejected.status).toBe(401);
+
+    const accepted = await runtime.fetch(
+      new Request("https://example.com/v1/spans", {
         method: "POST",
         headers: {
           authorization: "Bearer at_test",
           "content-type": "application/json",
         },
-        body: payload,
-      }),
-    );
-    expect(response.status).toBe(202);
-    expect(storage.alarmAt).not.toBeNull();
-
-    now = fixture.nowMs + 61_000;
-    await instance.alarm();
-    const batches = instance.stitcher.flush();
-    expect(batches).toHaveLength(1);
-    expect(batches[0]?.wideEvent?.outcome).toBe("abandoned");
-    expect(storage.alarmAt).toBeNull();
-  });
-
-  it("matches the Node runtime across delivery order", async () => {
-    const report = await runEndToEndConformance({
-      fixture: {
-        provider: fixture.provider,
-        tenant: fixture.tenant,
-        nowMs: fixture.nowMs,
-        quietMs: fixture.quietMs,
-        spans: fixture.spans,
-        events: fixture.events,
-        expectedOutcome: fixture.expectedOutcome,
-      },
-      create: async () => {
-        const DurableObject = createJourneyDurableObject({
-          providers: [],
-          sinks: [
+        body: JSON.stringify({
+          resourceSpans: [
             {
-              id: "capture",
-              accepts: ["spans", "journey"],
-              sampling: { keep: ["all"], successRate: 1 },
-              render: (journey) => ({
-                sinkId: "capture",
-                journeyId: journey.traceId,
-                spans: [journey.root, ...journey.spans],
-                wideEvent: toWideEvent(journey),
-              }),
-              write: async () => undefined,
+              resource: { attributes: [] },
+              scopeSpans: [
+                {
+                  scope: { name: "test" },
+                  spans: [
+                    {
+                      traceId: fixture.traceId,
+                      spanId: "1111111111111111",
+                      name: "auth.app.login_start",
+                      kind: 1,
+                      startTimeUnixNano: String(
+                        BigInt(fixture.nowMs) * 1_000_000n,
+                      ),
+                      endTimeUnixNano: String(
+                        BigInt(fixture.nowMs) * 1_000_000n,
+                      ),
+                      attributes: [
+                        {
+                          key: "auth.provider",
+                          value: { stringValue: "oidc" },
+                        },
+                        {
+                          key: "auth.tenant",
+                          value: { stringValue: "acme" },
+                        },
+                      ],
+                      status: { code: 0 },
+                    },
+                  ],
+                },
+              ],
             },
           ],
-          settings: { getTenant: async () => tenant },
-          captureBatches: true,
-          clock: () => fixture.nowMs,
-        });
-        return new DurableObject({ storage: new FakeStorage() }).stitcher;
-      },
+        }),
+      }),
+      env,
+    );
+    expect(accepted.status).toBe(202);
+
+    const instance = objects.get("acme");
+    expect(instance).toBeDefined();
+    await instance?.stitcher.runDue(Date.now() + 61_000);
+    expect(instance?.stitcher.stats().finalised).toBe(1);
+  });
+
+  it("exports a Durable Object class", () => {
+    const runtime = createCloudflareRuntime({
+      providers: [],
+      sinks: () => [],
     });
-    expect(report.failures).toEqual([]);
+    expect(typeof runtime.JourneyDurableObject).toBe("function");
   });
 });

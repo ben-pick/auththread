@@ -1,0 +1,31 @@
+{
+  "name": "@auththread/template-cloudflare-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "^0.1.0",
+    "@auththread/auth0": "^0.1.0",
+    "@auththread/oidc": "^0.1.0",
+    "@auththread/otlp": "^0.1.0",
+    "@auththread/sdk": "^0.1.0",
+    "@auththread/sink-otlp": "^0.1.0",
+    "@auththread/sink-wide-event": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "AUTHTHREAD_TENANTS": {
+        "description": "Tenant JSON. Each tenant needs `tenant`, `provider`, `apiKey` and a `salt` of at least 8 characters."
+      }
+    }
+  }
+}

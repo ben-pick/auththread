@@ -7,7 +7,13 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check && pnpm template:check",
+    "build": "turbo run build",
+    "pack:check": "node scripts/pack-check.ts",
+    "template:check": "node scripts/template-check.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && pnpm pack:check && changeset publish",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -24,7 +30,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@changesets/cli": "^3.0.3",
     "dependency-cruiser": "catalog:",
+    "publint": "^0.3.25",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -32,9 +40,11 @@
   "dependencies": {
     "@auththread/adapter-kit": "workspace:*",
     "@auththread/auth0": "workspace:*",
+    "@auththread/config": "workspace:^",
     "@auththread/oidc": "workspace:*",
     "@auththread/runtime-node": "workspace:*",
     "@auththread/schema": "workspace:*",
+    "@auththread/sdk": "workspace:^",
     "@auththread/sink-wide-event": "workspace:*",
     "@auththread/stitcher": "workspace:*"
   }

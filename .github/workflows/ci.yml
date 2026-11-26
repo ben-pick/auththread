@@ -17,6 +17,36 @@ jobs:
       # installs: each suite takes milliseconds.
       - run: pnpm check
 
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm pack:check
+      - run: pnpm template:check
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t auththread:ci .
+      - name: Smoke the image
+        run: |
+          docker run -d --name auththread-ci -p 8787:8787 \
+            -e AUTHTHREAD_CONFIG='{"tenants":[{"tenant":"demo","provider":"oidc","apiKey":"at_test","salt":"salt-salt"}]}' \
+            auththread:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/healthz; then exit 0; fi
+            sleep 1
+          done
+          docker logs auththread-ci
+          exit 1
+      - name: Stop the container
+        if: always()
+        run: docker stop auththread-ci || true
+
   journey:
     runs-on: ubuntu-latest
     steps:

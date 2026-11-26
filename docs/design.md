@@ -463,7 +463,7 @@ error handling become the expensive part.
 - No OTLP protobuf.
 - No signed page-snippet release or SRI build pipeline.
 - No rate limiting on the stitcher.
-- No Terraform modules or Helm chart.
+- No Terraform or Pulumi modules.
 - No Playwright end-to-end test against Keycloak.
 - No published `auth.*` semantic convention proposal.
 
@@ -473,11 +473,11 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 25 test files, 137 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 28 test files, 142 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | SDK 2,659 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
+| Browser budget | SDK 2,506 bytes gzipped against 5 KB; page snippet 936 against 8 KB (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |

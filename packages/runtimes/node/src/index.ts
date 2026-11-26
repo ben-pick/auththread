@@ -1,3 +1,9 @@
+export type {
+  NodeRuntime,
+  NodeRuntimeOptions,
+  NodeStorage,
+} from "./runtime.ts";
+export { createNodeRuntime } from "./runtime.ts";
 export type { NodeScheduler } from "./scheduler.ts";
 export { createNodeScheduler } from "./scheduler.ts";
 export type { NodeServer, NodeServerOptions } from "./server.ts";
