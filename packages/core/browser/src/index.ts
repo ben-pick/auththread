@@ -1,0 +1,199 @@
+import {
+  type Attributes,
+  type AuthUiStep,
+  isTraceId,
+  newSpanId,
+  newTraceId,
+  rootSpanId,
+  type SpanStatus,
+  type TraceId,
+} from "@auththread/schema";
+import type { BrowserProvider } from "./provider.ts";
+
+export interface StorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export interface BrowserOptions {
+  /** Base URL of the stitcher, for example https://auth-telemetry.example.com */
+  readonly endpoint: string;
+  /** Write-only tenant key. Public by design, like any browser telemetry key. */
+  readonly key: string;
+  readonly tenant: string;
+  readonly provider: BrowserProvider;
+  readonly storage?: StorageLike;
+  readonly now?: () => number;
+  readonly send?: (body: string) => void;
+  readonly fetchImpl?: typeof fetch;
+}
+
+export interface CallbackResult {
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+export interface AuthThreadBrowser {
+  traceId(): TraceId;
+  authorizeParams(): Record<string, string>;
+  callback(url: string | URL): CallbackResult;
+  tokenExchange(durationMs: number): void;
+  abandon(step: AuthUiStep): void;
+}
+
+const TRACE_KEY = "auththread.trace";
+const STARTED_KEY = "auththread.started";
+
+const memoryStorage = (): StorageLike => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+  };
+};
+
+const safeStorage = (storage?: StorageLike): StorageLike => {
+  if (storage !== undefined) return storage;
+  try {
+    return globalThis.sessionStorage ?? memoryStorage();
+  } catch {
+    return memoryStorage();
+  }
+};
+
+const compactSpan = (
+  traceId: TraceId,
+  name: string,
+  startMs: number,
+  durationMs: number,
+  attributes: Attributes,
+  status: SpanStatus,
+) => ({
+  traceId,
+  spanId: newSpanId(),
+  parentSpanId: rootSpanId(traceId),
+  name,
+  startMs,
+  durationMs,
+  attributes,
+  status,
+});
+
+export function init(options: BrowserOptions): AuthThreadBrowser {
+  const storage = safeStorage(options.storage);
+  const now = options.now ?? (() => Date.now());
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+
+  const stored = storage.getItem(TRACE_KEY);
+  const traceId = stored !== null && isTraceId(stored) ? stored : newTraceId();
+  storage.setItem(TRACE_KEY, traceId);
+
+  const send = (body: string): void => {
+    if (options.send !== undefined) {
+      try {
+        options.send(body);
+      } catch {
+        // Never in the login path.
+      }
+      return;
+    }
+    try {
+      const request = fetchImpl(
+        `${options.endpoint.replace(/\/$/, "")}/v1/compact-spans`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${options.key}`,
+          },
+          body,
+          keepalive: true,
+        },
+      );
+      void request.catch(() => undefined);
+    } catch {
+      // Never in the login path.
+    }
+  };
+
+  const emit = (span: unknown): void => {
+    send(JSON.stringify({ spans: [span] }));
+  };
+
+  const base: Attributes = {
+    "auth.provider": options.provider.id,
+    "auth.tenant": options.tenant,
+  };
+
+  return {
+    traceId: () => traceId,
+
+    authorizeParams() {
+      const startedAt = now();
+      storage.setItem(STARTED_KEY, String(startedAt));
+      emit(
+        compactSpan(traceId, "auth.app.login_start", startedAt, 0, base, {
+          code: "unset",
+        }),
+      );
+      return options.provider.authorizeParams(traceId);
+    },
+
+    callback(url) {
+      const parsed = typeof url === "string" ? new URL(url) : url;
+      const error = parsed.searchParams.get("error") ?? undefined;
+      const startedAt = Number(storage.getItem(STARTED_KEY) ?? String(now()));
+      const finishedAt = now();
+      emit(
+        compactSpan(
+          traceId,
+          "auth.app.callback",
+          finishedAt,
+          Math.max(0, finishedAt - startedAt),
+          {
+            ...base,
+            ...(error === undefined
+              ? {}
+              : { "auth.error.code": error, "auth.error.source": "provider" }),
+          },
+          error === undefined
+            ? { code: "ok" }
+            : { code: "error", message: error },
+        ),
+      );
+      return error === undefined ? { ok: true } : { ok: false, error };
+    },
+
+    tokenExchange(durationMs) {
+      const finishedAt = now();
+      emit(
+        compactSpan(
+          traceId,
+          "auth.app.token_exchange",
+          finishedAt - durationMs,
+          durationMs,
+          base,
+          { code: "ok" },
+        ),
+      );
+    },
+
+    abandon(step) {
+      const at = now();
+      emit(
+        compactSpan(
+          traceId,
+          "auth.ui.screen",
+          at,
+          0,
+          { ...base, "auth.ui.step": step, "auth.abandoned_at": step },
+          { code: "unset" },
+        ),
+      );
+    },
+  };
+}
+
+export type { BrowserProvider };

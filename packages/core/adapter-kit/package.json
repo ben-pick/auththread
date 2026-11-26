@@ -1,0 +1,25 @@
+{
+  "name": "@auththread/adapter-kit",
+  "version": "0.1.0",
+  "description": "Provider, runtime and sink contracts with the conformance suites that define support.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "dependencies": {
+    "@auththread/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

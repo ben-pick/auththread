@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://auththread.dev/schema/wide-event-1.json",
+  "title": "auththread wide event",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "event",
+    "traceId",
+    "spanId",
+    "outcome",
+    "provider",
+    "tenant",
+    "startedAt",
+    "durationMs",
+    "attributes",
+    "steps",
+    "correlationCounts"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "event": { "const": "auth.journey" },
+    "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "spanId": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "outcome": { "enum": ["success", "failed", "abandoned", "denied"] },
+    "provider": { "type": "string" },
+    "tenant": { "type": "string" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "number", "minimum": 0 },
+    "attributes": { "type": "object" },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "startOffsetMs", "durationMs"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "enum": ["ui", "hook", "app", "provider"] },
+          "startOffsetMs": { "type": "number" },
+          "durationMs": { "type": "number", "minimum": 0 },
+          "decision": { "type": "string" },
+          "errorCode": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "correlationCounts": {
+      "type": "object",
+      "required": ["exact", "inferred"],
+      "properties": {
+        "exact": { "type": "integer", "minimum": 0 },
+        "inferred": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@auththread/stitcher",
+  "version": "0.1.0",
+  "description": "Joins browser, hosted page, hook and provider events into one auth journey.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache"
+  },
+  "dependencies": {
+    "@auththread/adapter-kit": "workspace:*",
+    "@auththread/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@auththread/otlp": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
