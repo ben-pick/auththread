@@ -36,6 +36,22 @@ export interface JourneyDurableObjectInstance {
  * Returns the class a Worker exports as its Durable Object. The whole stitcher
  * lives here, so the buffer, the join and the timer share one consistent store.
  */
+const flushSinks = (
+  options: JourneyDurableObjectOptions,
+): Effect.Effect<void> =>
+  Effect.forEach(
+    options.sinks,
+    (sink) =>
+      (sink.flush ?? Effect.void).pipe(
+        Effect.catchCause((cause) =>
+          options.onError === undefined
+            ? Effect.logError(cause)
+            : options.onError(cause),
+        ),
+      ),
+    { discard: true },
+  );
+
 export const createJourneyDurableObject = (
   options: JourneyDurableObjectOptions,
 ) => {
@@ -89,11 +105,12 @@ export const createJourneyDurableObject = (
 
     alarm(): Promise<void> {
       return this.runtime.runPromise(
-        Effect.flatMap(Stitcher, (stitcher) =>
-          Effect.flatMap(options.now ?? Clock.currentTimeMillis, (nowMs) =>
-            stitcher.runDue(nowMs),
-          ),
-        ),
+        Effect.gen(function* () {
+          const stitcher = yield* Stitcher;
+          const nowMs = yield* options.now ?? Clock.currentTimeMillis;
+          yield* stitcher.runDue(nowMs);
+          yield* flushSinks(options);
+        }),
       );
     }
   };

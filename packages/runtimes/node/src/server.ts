@@ -14,11 +14,13 @@ export interface NodeServerOptions {
 const poll = (intervalMs: number) =>
   Effect.gen(function* () {
     const stitcher = yield* Stitcher;
-    yield* Effect.forever(
-      Effect.andThen(
-        Effect.sleep(Duration.millis(intervalMs)),
-        Clock.currentTimeMillis,
-      ).pipe(Effect.flatMap((nowMs) => stitcher.runDue(nowMs))),
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.andThen(
+          Effect.sleep(Duration.millis(intervalMs)),
+          Clock.currentTimeMillis,
+        ).pipe(Effect.flatMap((nowMs) => stitcher.runDue(nowMs))),
+      ),
     );
   });
 

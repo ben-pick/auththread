@@ -28,6 +28,7 @@ interface Env {
   readonly dbPath: string | undefined;
   readonly sampling: SamplingPolicy;
   readonly otlpEndpoint: string | undefined;
+  readonly serviceName: string;
   readonly otlpHeaders: Readonly<Record<string, string>>;
   readonly webhookUrl: string | undefined;
   readonly webhookSecret: string | undefined;
@@ -53,6 +54,9 @@ const loadEnv = Effect.gen(function* () {
     Config.withDefault(0.1),
   );
   const otlpEndpoint = yield* optionalString("OTLP_ENDPOINT");
+  const serviceName = yield* Config.String("OTEL_SERVICE_NAME").pipe(
+    Config.withDefault("auththread"),
+  );
   const otlpHeadersRaw = yield* Config.String("OTLP_HEADERS").pipe(
     Config.withDefault("{}"),
   );
@@ -84,6 +88,7 @@ const loadEnv = Effect.gen(function* () {
     dbPath,
     sampling,
     otlpEndpoint,
+    serviceName,
     otlpHeaders,
     webhookUrl,
     webhookSecret,
@@ -99,7 +104,7 @@ const sinksFor = (env: Env): readonly Sink[] => {
         sampling: env.sampling,
         exporter: createOtlpExporter({
           endpoint: env.otlpEndpoint,
-          serviceName: "auththread",
+          serviceName: env.serviceName,
           headers: env.otlpHeaders,
         }),
       }),

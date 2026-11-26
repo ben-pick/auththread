@@ -55,39 +55,39 @@ export const createObjectStoreSink = (
   const buffers = Ref.makeUnsafe(new Map<string, PartitionBuffer>());
 
   const flushPartition = (partition: string): Effect.Effect<void, SinkError> =>
-    Effect.gen(function* () {
-      const taken = yield* Ref.modify(buffers, (current) => {
+    Effect.acquireUseRelease(
+      Ref.modify(buffers, (current) => {
         const buffer = current.get(partition) ?? emptyBuffer;
         if (buffer.rows.length === 0) return [emptyBuffer, current] as const;
         const next = new Map(current);
         next.delete(partition);
         return [buffer, next] as const;
-      });
-      if (taken.rows.length === 0) return;
+      }),
+      (taken) => {
+        if (taken.rows.length === 0) return Effect.void;
 
-      const sorted = [...taken.rows].sort((a, b) =>
-        compareStrings(a.traceId, b.traceId),
-      );
-      const body = `${sorted.map((row) => JSON.stringify(row)).join("\n")}\n`;
-      const key = `${prefix}/${partition}/batch-${sha256Hex(body).slice(0, 16)}.ndjson`;
+        const sorted = [...taken.rows].sort((a, b) =>
+          compareStrings(a.traceId, b.traceId),
+        );
+        const body = `${sorted.map((row) => JSON.stringify(row)).join("\n")}\n`;
+        const key = `${prefix}/${partition}/batch-${sha256Hex(body).slice(0, 16)}.ndjson`;
 
-      yield* options.store.put(key, body, "application/x-ndjson").pipe(
-        Effect.catchTag("SinkError", (error) =>
-          Effect.gen(function* () {
-            yield* Ref.update(buffers, (current) => {
-              const existing = current.get(partition) ?? emptyBuffer;
-              const next = new Map(current);
-              next.set(partition, {
-                rows: [...taken.rows, ...existing.rows],
-                bytes: taken.bytes + existing.bytes,
-              });
-              return next;
-            });
-            return yield* error;
-          }),
-        ),
-      );
-    });
+        return options.store.put(key, body, "application/x-ndjson");
+      },
+      (taken, exit) => {
+        if (exit._tag === "Success" || taken.rows.length === 0)
+          return Effect.void;
+        return Ref.update(buffers, (current) => {
+          const existing = current.get(partition) ?? emptyBuffer;
+          const next = new Map(current);
+          next.set(partition, {
+            rows: [...taken.rows, ...existing.rows],
+            bytes: taken.bytes + existing.bytes,
+          });
+          return next;
+        });
+      },
+    );
 
   const flushAll: Effect.Effect<void, SinkError> = Effect.gen(function* () {
     const partitions = [...(yield* Ref.get(buffers)).keys()];

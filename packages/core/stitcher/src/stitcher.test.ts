@@ -567,6 +567,27 @@ describe("http surface", () => {
     ),
   );
 
+  it.effect("rejects an oversized streamed body with 400", () =>
+    withStitcher((stitcher) =>
+      Effect.gen(function* () {
+        const response = yield* stitcher.handle(
+          new Request("http://stitcher/v1/spans", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer at_test",
+              "content-type": "application/json",
+            },
+            body: "x".repeat(300 * 1024),
+          }),
+        );
+        expect(response.status).toBe(400);
+        expect(yield* Effect.promise(() => response.json())).toMatchObject({
+          error: "bad_request",
+        });
+      }),
+    ),
+  );
+
   it.effect("rejects a non-integer OTLP timestamp with 400", () =>
     withStitcher((stitcher) =>
       Effect.gen(function* () {

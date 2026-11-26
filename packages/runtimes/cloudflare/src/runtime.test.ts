@@ -132,6 +132,7 @@ describe("durable object runtime", () => {
     Effect.gen(function* () {
       const storage = new FakeStorage();
       let now = fixture.nowMs;
+      let flushes = 0;
       const DurableObject = createJourneyDurableObject({
         providers: [],
         sinks: [
@@ -146,6 +147,9 @@ describe("durable object runtime", () => {
               wideEvent: toWideEvent(journey),
             }),
             write: () => Effect.void,
+            flush: Effect.sync(() => {
+              flushes += 1;
+            }),
           },
         ],
         settings: settingsLayer,
@@ -213,6 +217,7 @@ describe("durable object runtime", () => {
       expect(batches).toHaveLength(1);
       expect(batches[0]?.wideEvent?.outcome).toBe("abandoned");
       expect(storage.alarmAt).toBeNull();
+      expect(flushes).toBeGreaterThan(0);
     }),
   );
 

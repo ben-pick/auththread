@@ -169,19 +169,51 @@ const bearer = (request: Request): string | null => {
   return fallback !== undefined && fallback.length > 0 ? fallback : null;
 };
 
-const readJson = (request: Request): Effect.Effect<unknown, BadRequest> =>
+const readBody = (request: Request): Effect.Effect<string, BadRequest> =>
   Effect.gen(function* () {
     const declared = Number(request.headers.get("content-length") ?? "0");
     if (declared > MAX_BODY_BYTES)
       return yield* new BadRequest({ message: "payload too large" });
 
-    const text = yield* Effect.tryPromise({
-      try: () => request.text(),
-      catch: () => new BadRequest({ message: "could not read the body" }),
-    });
-    if (text.length > MAX_BODY_BYTES)
-      return yield* new BadRequest({ message: "payload too large" });
+    const body = request.body;
+    if (body === null) return "";
 
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+
+    while (true) {
+      const next = yield* Effect.tryPromise({
+        try: () => reader.read(),
+        catch: () => new BadRequest({ message: "could not read the body" }),
+      });
+      if (next.done) break;
+      const chunk = next.value;
+      if (chunk === undefined) continue;
+
+      size += chunk.byteLength;
+      if (size > MAX_BODY_BYTES) {
+        yield* Effect.tryPromise({
+          try: () => reader.cancel(),
+          catch: () => new BadRequest({ message: "payload too large" }),
+        }).pipe(Effect.orElseSucceed(() => undefined));
+        return yield* new BadRequest({ message: "payload too large" });
+      }
+      chunks.push(chunk);
+    }
+
+    const merged = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(merged);
+  });
+
+const readJson = (request: Request): Effect.Effect<unknown, BadRequest> =>
+  Effect.gen(function* () {
+    const text = yield* readBody(request);
     return yield* Schema.decodeUnknownEffect(
       Schema.fromJsonString(Schema.Unknown),
     )(text).pipe(
