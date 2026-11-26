@@ -13,6 +13,8 @@ export interface DurableObjectStorageLike {
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
   list<T>(options?: { prefix?: string }): Promise<Map<string, T>>;
+  /** Optional so non-Durable-Object fakes need not model alarms. */
+  getAlarm?(): Promise<number | null>;
   setAlarm(atMs: number): Promise<void>;
   deleteAlarm(): Promise<void>;
 }
@@ -71,9 +73,8 @@ export function createDurableObjectBuffer(
       for (const key of hintKeys(hints)) {
         const storageKey = hintKey(key, traceId);
         const existing = await storage.get<{ atMs: number }>(storageKey);
-        await storage.put(storageKey, {
-          atMs: Math.max(existing?.atMs ?? 0, atMs),
-        });
+        if (existing !== undefined && existing.atMs >= atMs) continue;
+        await storage.put(storageKey, { atMs });
       }
       if (hints.transactionId !== undefined) {
         const storageKey = transactionKey(
@@ -82,9 +83,9 @@ export function createDurableObjectBuffer(
           traceId,
         );
         const existing = await storage.get<{ atMs: number }>(storageKey);
-        await storage.put(storageKey, {
-          atMs: Math.max(existing?.atMs ?? 0, atMs),
-        });
+        if (existing === undefined || existing.atMs < atMs) {
+          await storage.put(storageKey, { atMs });
+        }
       }
     },
     async findByTransaction(tenant, transactionId, windowMs, nowMs) {
@@ -164,8 +165,9 @@ export interface AlarmScheduler extends Scheduler {
 }
 
 /**
- * One alarm per object, fired at the earliest deadline. Every schedule recomputes
- * the minimum, so a quiet period extends cleanly when a late span arrives.
+ * One alarm per object, fired at the earliest deadline. `schedule` only moves
+ * the alarm earlier; `cancel` and `runDue` recompute the minimum, so a quiet
+ * period extends cleanly when a late span arrives.
  */
 export function createAlarmScheduler(
   storage: DurableObjectStorageLike,
@@ -194,7 +196,12 @@ export function createAlarmScheduler(
   return {
     async schedule(traceId, atMs) {
       await storage.put(alarmKey(traceId), { atMs });
-      await align();
+      if (storage.getAlarm === undefined) {
+        await align();
+        return;
+      }
+      const current = await storage.getAlarm();
+      if (current === null || atMs < current) await storage.setAlarm(atMs);
     },
     async cancel(traceId) {
       await storage.delete(alarmKey(traceId));
@@ -204,11 +211,22 @@ export function createAlarmScheduler(
       handlers.push(handler);
     },
     async runDue(nowMs) {
-      for (const traceId of await due(nowMs)) {
-        await storage.delete(alarmKey(traceId));
-        for (const handler of handlers) await handler(traceId);
+      const failures: unknown[] = [];
+      try {
+        for (const traceId of await due(nowMs)) {
+          try {
+            for (const handler of handlers) await handler(traceId);
+            await storage.delete(alarmKey(traceId));
+          } catch (error) {
+            // Keep the deadline: the platform retries a throwing alarm, and
+            // align() reschedules this timestamp so the journey is not lost.
+            failures.push(error);
+          }
+        }
+      } finally {
+        await align();
       }
-      await align();
+      if (failures.length > 0) throw failures[0];
     },
     async alarm() {
       await this.runDue(clock());

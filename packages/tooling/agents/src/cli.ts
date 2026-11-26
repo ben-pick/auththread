@@ -6,6 +6,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import {
+  isVendoredFile,
+  readVendorLock,
+  VENDOR_LOCK_PATH,
+  type VendorLock,
+  verifyVendored,
+} from "./vendor.ts";
+import { updateVendored } from "./vendor-update.ts";
 
 const root = resolve(import.meta.dirname, "../../../..");
 const skip = new Set([
@@ -135,9 +143,10 @@ const index = (): void => {
   console.log("wrote docs/decisions/INDEX.md and the rules index");
 };
 
-const links = (files: string[]): string[] => {
+const links = (files: string[], lock: VendorLock | undefined): string[] => {
   const problems: string[] = [];
   for (const file of files.filter((path) => path.endsWith(".md"))) {
+    if (isVendoredFile(relative(root, file), lock)) continue;
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
       const target = match[1] ?? "";
@@ -191,7 +200,19 @@ const check = (): void => {
   }
 
   const files = walk(root).filter((file) => !file.includes("/.git/"));
-  problems.push(...links(files), ...secrets(files));
+
+  const lockResult = readVendorLock(root);
+  let lock: VendorLock | undefined;
+  if (!lockResult.ok) {
+    problems.push(`${VENDOR_LOCK_PATH}: ${lockResult.error}`);
+  } else {
+    lock = lockResult.value;
+    for (const finding of verifyVendored(root, lock)) {
+      problems.push(`${finding.dir}: ${finding.message}`);
+    }
+  }
+
+  problems.push(...links(files, lock), ...secrets(files));
 
   if (
     readFileSync(join(root, "docs/decisions/INDEX.md"), "utf8") !== adrIndex()
@@ -210,10 +231,79 @@ const check = (): void => {
   console.log("agent files are consistent");
 };
 
+interface SkillsUpdateFlags {
+  check: boolean;
+  dryRun: boolean;
+  repo?: string;
+  skill?: string;
+  sha?: string;
+}
+
+const skillsUpdateFlags = (): SkillsUpdateFlags => {
+  const flags: SkillsUpdateFlags = { check: false, dryRun: false };
+  const args = process.argv.slice(3);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--check") {
+      flags.check = true;
+    } else if (arg === "--dry-run") {
+      flags.dryRun = true;
+    } else if (arg === "--repo" || arg === "--skill" || arg === "--sha") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        console.error(`${arg} needs a value`);
+        process.exit(1);
+      }
+      flags[arg.slice(2) as "repo" | "skill" | "sha"] = value;
+      index += 1;
+    } else {
+      console.error(`unknown option ${arg}`);
+      process.exit(1);
+    }
+  }
+  return flags;
+};
+
+const skillsUpdate = (): void => {
+  const flags = skillsUpdateFlags();
+  const lock = readVendorLock(root);
+  if (!lock.ok) {
+    console.error(`${VENDOR_LOCK_PATH}: ${lock.error}`);
+    process.exit(1);
+  }
+
+  if (flags.check) {
+    const drift = verifyVendored(root, lock.value);
+    for (const finding of drift) {
+      console.error(`${finding.dir}: ${finding.message}`);
+    }
+    console.log(
+      `skills:update --check — ${lock.value.skills.length} vendored skill(s), ${drift.length} drifted`,
+    );
+    if (drift.length > 0) process.exit(1);
+    return;
+  }
+
+  try {
+    const result = updateVendored({
+      root,
+      ...(flags.repo === undefined ? {} : { repo: flags.repo }),
+      ...(flags.skill === undefined ? {} : { skill: flags.skill }),
+      ...(flags.sha === undefined ? {} : { sha: flags.sha }),
+      dryRun: flags.dryRun,
+    });
+    for (const message of result.messages) console.log(message);
+  } catch (cause) {
+    console.error(cause instanceof Error ? cause.message : String(cause));
+    process.exit(1);
+  }
+};
+
 const command = process.argv[2];
 if (command === "index") index();
 else if (command === "check") check();
+else if (command === "skills:update") skillsUpdate();
 else {
-  console.error("usage: agents <check|index>");
+  console.error("usage: agents <check|index|skills:update>");
   process.exit(1);
 }

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "cloudflare",
+      "dir": ".agents/skills/cloudflare",
+      "repo": "cloudflare/skills",
+      "path": "skills/cloudflare",
+      "commit": "1a33048817d06df12882cb881dfc754e7039954a",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:9d2d7234d5b652fb9409a1a06002a193e1c1fb0ec728cb9dc6ceacf1aa79cfca"
+    },
+    {
+      "name": "durable-objects",
+      "dir": ".agents/skills/durable-objects",
+      "repo": "cloudflare/skills",
+      "path": "skills/durable-objects",
+      "commit": "1a33048817d06df12882cb881dfc754e7039954a",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:805bc3f7b2d3139f3ad0f50c6e20c69ee16b195a0e8cc9298b8e567814af8dbd"
+    },
+    {
+      "name": "turborepo",
+      "dir": ".agents/skills/turborepo",
+      "repo": "vercel/turborepo",
+      "path": "skills/turborepo",
+      "commit": "7eed8aacae3b3e62b3d2c927d5ed2c21e6e12396",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:2fd19755252b6ce015e0662b88a2cb7b12ddbf592408f17ebc0cefa8506920ea"
+    },
+    {
+      "name": "workers-best-practices",
+      "dir": ".agents/skills/workers-best-practices",
+      "repo": "cloudflare/skills",
+      "path": "skills/workers-best-practices",
+      "commit": "1a33048817d06df12882cb881dfc754e7039954a",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:1c4267f061dfae9c045ea03a5a3f8305eb48f532187e8e8dce7aed8a7bed10e9"
+    },
+    {
+      "name": "workers-profiling",
+      "dir": ".agents/skills/workers-profiling",
+      "repo": "cloudflare/skills",
+      "path": "skills/workers-profiling",
+      "commit": "1a33048817d06df12882cb881dfc754e7039954a",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:5c2467d1040214e32f383d6013361c14aaba83c3ede6aa859cb1bb8aff1bbf93"
+    },
+    {
+      "name": "wrangler",
+      "dir": ".agents/skills/wrangler",
+      "repo": "cloudflare/skills",
+      "path": "skills/wrangler",
+      "commit": "1a33048817d06df12882cb881dfc754e7039954a",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "vendoredAt": "2026-11-02",
+      "hash": "sha256:e20cac1ee4e34a9ef7396334ed4e44773c8bb371e5233225cd6d2f73e93e41b5"
+    }
+  ]
+}

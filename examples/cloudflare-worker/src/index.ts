@@ -1,3 +1,4 @@
+import { DurableObject } from "cloudflare:workers";
 import {
   createStaticSettings,
   DEFAULT_SAMPLING,
@@ -17,39 +18,112 @@ import { sha256Hex } from "@auththread/schema";
 import { createOtlpSink } from "@auththread/sink-otlp";
 import { createWideEventSink } from "@auththread/sink-wide-event";
 
-export interface Env {
-  readonly JOURNEY: DurableObjectNamespace;
-  readonly AUTHTHREAD_TENANTS: string;
-  readonly AUTHTHREAD_QUIET_MS?: string;
-  readonly AUTHTHREAD_SAMPLE_SUCCESS?: string;
-  readonly OTLP_ENDPOINT?: string;
-  readonly OTLP_HEADERS?: string;
-}
-
-interface DurableObjectNamespace {
-  idFromName(name: string): DurableObjectId;
-  get(id: DurableObjectId): { fetch(request: Request): Promise<Response> };
-}
-
-interface DurableObjectId {
-  readonly name?: string;
-}
-
 interface TenantConfig {
-  readonly tenants: Array<{
-    readonly tenant: string;
-    readonly provider: string;
-    readonly apiKey: string;
-    readonly salt: string;
-    readonly providerSettings?: Auth0FeedSettings;
-  }>;
+  readonly tenants: readonly TenantEntry[];
 }
+
+interface TenantEntry {
+  readonly tenant: string;
+  readonly provider: string;
+  readonly apiKey: string;
+  readonly salt: string;
+  readonly providerSettings: Auth0FeedSettings;
+}
+
+const record = (value: unknown, what: string): Record<string, unknown> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${what} must be an object`);
+  }
+  return value as Record<string, unknown>;
+};
+
+const text = (value: unknown, what: string): string => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${what} must be a non-empty string`);
+  }
+  return value;
+};
+
+const optionalText = (value: unknown, what: string): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${what} must be a string`);
+  return value;
+};
+
+const parseJson = (value: string, what: string): unknown => {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new Error(`${what} is not valid JSON`);
+  }
+};
+
+const decodeFeedSettings = (
+  value: unknown,
+  what: string,
+): Auth0FeedSettings => {
+  const input = value === undefined ? {} : record(value, what);
+  const settings: {
+    feedSecret?: string;
+    domain?: string;
+    managementToken?: string;
+  } = {};
+
+  const feedSecret = optionalText(input.feedSecret, `${what}.feedSecret`);
+  if (feedSecret !== undefined) settings.feedSecret = feedSecret;
+  const domain = optionalText(input.domain, `${what}.domain`);
+  if (domain !== undefined) settings.domain = domain;
+  const managementToken = optionalText(
+    input.managementToken,
+    `${what}.managementToken`,
+  );
+  if (managementToken !== undefined) settings.managementToken = managementToken;
+
+  return settings;
+};
+
+const decodeTenant = (value: unknown, index: number): TenantEntry => {
+  const what = `AUTHTHREAD_TENANTS.tenants[${index}]`;
+  const input = record(value, what);
+  return {
+    tenant: text(input.tenant, `${what}.tenant`),
+    provider: text(input.provider, `${what}.provider`),
+    apiKey: text(input.apiKey, `${what}.apiKey`),
+    salt: text(input.salt, `${what}.salt`),
+    providerSettings: decodeFeedSettings(
+      input.providerSettings,
+      `${what}.providerSettings`,
+    ),
+  };
+};
 
 const parseTenants = (value: string): TenantConfig => {
-  const parsed = JSON.parse(value) as TenantConfig;
-  if (!Array.isArray(parsed.tenants))
+  const parsed = record(
+    parseJson(value, "AUTHTHREAD_TENANTS"),
+    "AUTHTHREAD_TENANTS",
+  );
+  if (!Array.isArray(parsed.tenants)) {
     throw new Error("AUTHTHREAD_TENANTS needs a tenants array");
-  return parsed;
+  }
+  return { tenants: parsed.tenants.map(decodeTenant) };
+};
+
+const parseHeaders = (value: string): Record<string, string> => {
+  const parsed = record(parseJson(value, "OTLP_HEADERS"), "OTLP_HEADERS");
+  const headers: Record<string, string> = {};
+  for (const [key, header] of Object.entries(parsed)) {
+    headers[key] = text(header, `OTLP_HEADERS.${key}`);
+  }
+  return headers;
+};
+
+const onError = (error: unknown): void => {
+  console.error(
+    JSON.stringify({
+      message: "auththread runtime error",
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
 };
 
 const sinksFor = (env: Env): Sink[] => {
@@ -72,17 +146,18 @@ const sinksFor = (env: Env): Sink[] => {
               headers:
                 env.OTLP_HEADERS === undefined
                   ? {}
-                  : (JSON.parse(env.OTLP_HEADERS) as Record<string, string>),
+                  : parseHeaders(env.OTLP_HEADERS),
             }),
           }),
         ]),
   ];
 };
 
-export class JourneyDurableObject {
+export class JourneyDurableObject extends DurableObject<Env> {
   readonly inner: InstanceType<ReturnType<typeof createJourneyDurableObject>>;
 
-  constructor(state: unknown, env: Env) {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env);
     const config = parseTenants(env.AUTHTHREAD_TENANTS);
     const tenants: TenantSettings<Auth0FeedSettings>[] = config.tenants.map(
       (tenant) => ({
@@ -90,25 +165,26 @@ export class JourneyDurableObject {
         provider: tenant.provider,
         apiKeyHash: sha256Hex(tenant.apiKey),
         salt: tenant.salt,
-        providerSettings: tenant.providerSettings ?? {},
+        providerSettings: tenant.providerSettings,
       }),
     );
 
-    const DurableObject = createJourneyDurableObject({
+    const JourneyRuntime = createJourneyDurableObject({
       providers: [oidcAdapter, auth0Adapter],
       sinks: sinksFor(env),
       settings: createStaticSettings(tenants),
       captureBatches: false,
       quietMs: Number(env.AUTHTHREAD_QUIET_MS ?? "600000"),
+      onError,
     });
-    this.inner = new DurableObject(state as never);
+    this.inner = new JourneyRuntime(state);
   }
 
-  fetch(request: Request): Promise<Response> {
+  override fetch(request: Request): Promise<Response> {
     return this.inner.fetch(request);
   }
 
-  alarm(): Promise<void> {
+  override alarm(): Promise<void> {
     return this.inner.alarm();
   }
 }
@@ -121,10 +197,11 @@ const CORS: Record<string, string> = {
   "access-control-max-age": "86400",
 };
 
-let cached: { source: string; directory: KeyDirectory } | null = null;
+let cached: { sourceHash: string; directory: KeyDirectory } | null = null;
 
 const directoryFor = (source: string): KeyDirectory => {
-  if (cached?.source === source) return cached.directory;
+  const sourceHash = sha256Hex(source);
+  if (cached?.sourceHash === sourceHash) return cached.directory;
   const config = parseTenants(source);
   const directory = createKeyDirectory(
     config.tenants.map((tenant) => ({
@@ -132,7 +209,7 @@ const directoryFor = (source: string): KeyDirectory => {
       apiKey: tenant.apiKey,
     })),
   );
-  cached = { source, directory };
+  cached = { sourceHash, directory };
   return directory;
 };
 

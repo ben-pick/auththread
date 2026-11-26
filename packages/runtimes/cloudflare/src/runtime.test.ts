@@ -34,6 +34,9 @@ class FakeStorage implements DurableObjectStorageLike {
       ) as Array<[string, T]>,
     );
   }
+  async getAlarm(): Promise<number | null> {
+    return this.alarmAt;
+  }
   async setAlarm(atMs: number): Promise<void> {
     this.alarmAt = atMs;
   }
@@ -77,8 +80,25 @@ describe("durable object runtime", () => {
     expect(storage.alarmAt).toBe(300);
     await scheduler.schedule("c7".repeat(16) as typeof fixture.traceId, 200);
     expect(storage.alarmAt).toBe(200);
+    await scheduler.schedule("d7".repeat(16) as typeof fixture.traceId, 400);
+    expect(storage.alarmAt).toBe(200);
     await scheduler.cancel("c7".repeat(16) as typeof fixture.traceId);
     expect(storage.alarmAt).toBe(300);
+  });
+
+  it("keeps a deadline when its handler throws so the alarm can retry", async () => {
+    const storage = new FakeStorage();
+    const scheduler = createAlarmScheduler(storage, () => fixture.nowMs);
+    await scheduler.schedule(fixture.traceId, 500);
+    scheduler.onDue(async () => {
+      throw new Error("sink unavailable");
+    });
+
+    await expect(scheduler.runDue(fixture.nowMs)).rejects.toThrow(
+      "sink unavailable",
+    );
+    expect(storage.map.has(`a:${fixture.traceId}`)).toBe(true);
+    expect(storage.alarmAt).toBe(500);
   });
 
   it("finalises a journey from an alarm and exports it", async () => {

@@ -2,12 +2,19 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "auththread",
   "main": "src/index.ts",
-  "compatibility_date": "2026-11-01",
+  "compatibility_date": "2026-11-26",
   "durable_objects": {
     "bindings": [{ "name": "JOURNEY", "class_name": "JourneyDurableObject" }]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["JourneyDurableObject"] }
   ],
-  "observability": { "enabled": true }
+  "secrets": {
+    "required": ["AUTHTHREAD_TENANTS"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
 }
