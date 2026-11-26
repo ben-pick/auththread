@@ -37,7 +37,7 @@ UI or a trace store. It does not ship the paid reliability service.
 | Provider event | A normalised item from a provider feed such as an Auth0 Log Stream |
 | Stitcher | The process that joins spans and events into a journey |
 | Adapter | A provider, a runtime or a sink. Core never imports one |
-| Sink | An output such as OTLP, stdout JSON or a webhook |
+| Sink | An output such as OTLP, stdout JSON, a webhook or object storage |
 | Wide event | One flat JSON record per journey, for logs and warehouses |
 
 ---
@@ -48,7 +48,8 @@ UI or a trace store. It does not ship the paid reliability service.
  Browser SDK ─┐
  Login page  ─┼─ spans ──▶ stitcher ──┬─▶ OTLP sink ──▶ any tracing backend
  Hook wrapper ─┘     (buffer, join,    ├─▶ wide event ──▶ logs or warehouse
- Provider feed ─ events ─┘  finalise)  └─▶ webhook ─────▶ anything with HTTP
+ Provider feed ─ events ─┘  finalise)  ├─▶ webhook ─────▶ anything with HTTP
+                                       └─▶ object store ─▶ S3/R2 → ClickHouse
 ```
 
 The stitcher is a Fetch handler: `fetch(Request): Promise<Response>`. Cloudflare calls it
@@ -389,7 +390,7 @@ ship, not for the whole matrix.
 packages/core/{schema,otlp,adapter-kit,browser,stitcher}
 packages/providers/{oidc,auth0}
 packages/runtimes/{node,cloudflare}
-packages/sinks/{otlp,wide-event,webhook}
+packages/sinks/{otlp,wide-event,webhook,object-store}
 packages/tooling/{agents,conformance}
 examples/{keycloak-compose,node-docker,cloudflare-worker}
 ```
@@ -434,6 +435,7 @@ error handling become the expensive part.
 | Deterministic sampling | Random sampling | If statistical fidelity beats replayability |
 | Hint join requires a user hash and the same tenant | Join on client ID too | If providers expose a per-session client |
 | Exact transaction join when a provider exposes one | Hash hints only | If a provider gives no transaction ID |
+| Object store sink for analytics | A vendor-specific warehouse sink | If a warehouse needs a direct connector |
 | Latest terminal signal decides the outcome | Any failure wins | Never, once retries share a transaction |
 | Deadlines never sit in the past | Trust client timestamps | Never for a quiet period |
 | New login attempt rotates the trace | Keep one trace per tab | If an app performs several logins in one redirect |
@@ -451,7 +453,7 @@ error handling become the expensive part.
 - No trace store, UI, alerts, replay tests or AI.
 - No Redis, Postgres, D1, Lambda or Kubernetes runtime.
 - No deep adapters for Cognito, Okta, Supabase, Clerk, WorkOS or Keycloak.
-- No object store, Datadog native, Splunk HEC or Kafka sink.
+- No Datadog native, Splunk HEC or Kafka sink.
 - No OTLP protobuf.
 - No signed page-snippet release or SRI build pipeline.
 - No rate limiting on the stitcher.
@@ -465,7 +467,7 @@ error handling become the expensive part.
 
 | Claim | Evidence |
 | --- | --- |
-| Suite green | `pnpm check` exits 0, 21 test files, 113 tests (**measured**) |
+| Suite green | `pnpm check` exits 0, 23 test files, 120 tests (**measured**) |
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |

@@ -15,7 +15,7 @@ framework. A paid reliability service comes later in a separate repo (ADR-0006).
 | Core | Neutral schema, double redaction, tiny OTLP exporter, adapter contracts, conformance suites, stitcher |
 | Providers | `oidc` (browser, any OIDC provider), `auth0` (browser params, Log Stream feed, Action wrapper, page snippet, config fetch) |
 | Runtimes | Cloudflare (Durable Object buffer and alarms), Node (memory buffer, timer scheduler, JSON settings) |
-| Sinks | OTLP, wide event to stdout, HMAC webhook |
+| Sinks | OTLP, wide event to stdout, HMAC webhook, NDJSON objects in S3/R2/MinIO |
 | Examples | Keycloak in Docker, Node image, Cloudflare Worker |
 | Docs | Adding a provider, adding a runtime, schema, privacy, decisions |
 
@@ -76,6 +76,7 @@ logins produce identical output on every runtime.
 | `@auththread/sink-otlp` | Spans to any OTLP backend |
 | `@auththread/sink-wide-event` | One JSON journey per line |
 | `@auththread/sink-webhook` | Signed journey JSON |
+| `@auththread/sink-object-store` | NDJSON journeys in S3, R2 or MinIO |
 
 ## Support status
 
@@ -89,8 +90,8 @@ A provider, runtime or sink is supported only when its conformance suite is gree
 | Cognito, Okta, Supabase, Clerk, WorkOS, Keycloak deep | | community |
 | Cloudflare Workers, Node/Docker | buffer, scheduler, settings | v0.1 |
 | Redis, Postgres, D1, Lambda, Kubernetes | | next |
-| OTLP, wide event, webhook | | v0.1 |
-| Object store, Datadog native, Splunk HEC, Kafka | | community |
+| OTLP, wide event, webhook, object store (NDJSON) | | v0.1 |
+| Datadog native, Splunk HEC, Kafka | | community |
 
 Storage backends beyond memory and Durable Object storage are deferred by ADR-0007, and the
 page snippet supply chain is manual by ADR-0008. Both are recorded rather than implied.
