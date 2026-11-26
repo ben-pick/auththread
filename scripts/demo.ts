@@ -31,6 +31,7 @@ const stitcher = createStitcher({
   sinks: [createWideEventSink({ write: (line) => lines.push(line) })],
   quietMs: fixture.quietMs,
   captureBatches: true,
+  clock: { now: () => fixture.nowMs },
 });
 
 for (const span of fixture.spans) await stitcher.ingestSpan(span, tenant);
