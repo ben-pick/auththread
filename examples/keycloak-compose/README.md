@@ -19,7 +19,8 @@ Then:
    see the same journey as a trace.
 
 A successful Keycloak login produces three steps: `auth.app.login_start`,
-`auth.app.callback` and `auth.app.token_exchange`, with outcome `success`.
+`auth.app.callback` and `auth.app.token_exchange`, with outcome `success`. The compose sets
+`AUTHTHREAD_SAMPLE_SUCCESS=1`, so every success is kept. The library default keeps 10%.
 
 What each path produces:
 

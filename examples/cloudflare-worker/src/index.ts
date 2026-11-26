@@ -1,5 +1,7 @@
 import {
   createStaticSettings,
+  DEFAULT_SAMPLING,
+  type SamplingPolicy,
   type Sink,
   type TenantSettings,
 } from "@auththread/adapter-kit";
@@ -19,6 +21,7 @@ export interface Env {
   readonly JOURNEY: DurableObjectNamespace;
   readonly AUTHTHREAD_TENANTS: string;
   readonly AUTHTHREAD_QUIET_MS?: string;
+  readonly AUTHTHREAD_SAMPLE_SUCCESS?: string;
   readonly OTLP_ENDPOINT?: string;
   readonly OTLP_HEADERS?: string;
 }
@@ -49,23 +52,32 @@ const parseTenants = (value: string): TenantConfig => {
   return parsed;
 };
 
-const sinksFor = (env: Env): Sink[] => [
-  createWideEventSink(),
-  ...(env.OTLP_ENDPOINT === undefined
-    ? []
-    : [
-        createOtlpSink({
-          exporter: createOtlpExporter({
-            endpoint: env.OTLP_ENDPOINT,
-            serviceName: "auththread",
-            headers:
-              env.OTLP_HEADERS === undefined
-                ? {}
-                : (JSON.parse(env.OTLP_HEADERS) as Record<string, string>),
+const sinksFor = (env: Env): Sink[] => {
+  const raw = Number(env.AUTHTHREAD_SAMPLE_SUCCESS ?? "0.1");
+  const sampling: SamplingPolicy = {
+    ...DEFAULT_SAMPLING,
+    successRate: Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 1) : 0.1,
+  };
+
+  return [
+    createWideEventSink({ sampling }),
+    ...(env.OTLP_ENDPOINT === undefined
+      ? []
+      : [
+          createOtlpSink({
+            sampling,
+            exporter: createOtlpExporter({
+              endpoint: env.OTLP_ENDPOINT,
+              serviceName: "auththread",
+              headers:
+                env.OTLP_HEADERS === undefined
+                  ? {}
+                  : (JSON.parse(env.OTLP_HEADERS) as Record<string, string>),
+            }),
           }),
-        }),
-      ]),
-];
+        ]),
+  ];
+};
 
 export class JourneyDurableObject {
   readonly inner: InstanceType<ReturnType<typeof createJourneyDurableObject>>;
