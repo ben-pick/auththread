@@ -19,6 +19,7 @@
     "gen": "node packages/tooling/generators/src/cli.ts",
     "demo": "node scripts/demo.ts",
     "smoke": "node scripts/smoke.ts",
+    "probe:auth0": "node scripts/auth0-probe.ts",
     "budget": "node packages/tooling/budget/src/cli.ts"
   },
   "devDependencies": {

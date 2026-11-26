@@ -86,6 +86,9 @@ The feed can become exact without it:
 4. If they differ, repeat for `event.session.id` and `details.session_id`.
 5. If both fail, the tenant's events predate these fields and hints remain.
 
+The step by step probe is in `docs/research/auth0-probe.md`. It prints both sides and a match
+line for the transaction and session.
+
 Until that measurement runs, the hint join stays. It is correct, but it is probabilistic where
 an exact join may exist.
 
