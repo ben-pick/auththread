@@ -1,10 +1,10 @@
 # Auth0 log correlation research
 
-Date: 26 November 2026. Researched with the Auth0 Docs MCP server, which is now configured
-globally in `~/.config/opencode/opencode.json` as `auth0-docs`.
+Date: 26 November 2026. Researched with the Auth0 Docs MCP server, then verified on a test
+tenant with the probe in `scripts/auth0-probe.ts`.
 
 Sources: the tenant log OpenAPI schema, the Management API reference, the custom log stream
-docs, and the post-login event object.
+docs, the post-login event object, and one real login.
 
 ## Question
 
@@ -16,81 +16,95 @@ a Log Stream item carries the same trace ID as the browser and the Action?
 No customer-supplied metadata is supported on login events. There is no custom field and no
 header that `/authorize` echoes into the stream.
 
-There is one customer-supplied correlation field, but it applies only to Management API
-operations. The Management API accepts `X-Correlation-ID` on `POST`, `PUT`, `PATCH` and
-`DELETE`, up to 64 characters, and shows it as `references.correlation_id` in that operation's
-log event. Login events do not go through the Management API.
+The login event is not hint-only. The post-login Action and the log event share a transaction
+ID and a session ID. Both matched exactly on the test tenant.
 
-The login event is not hint-only, though. The log schema and the post-login Action object share
-two server-generated identifiers, and one of them looks like an exact join.
+## Verified on a real tenant
 
-## The likely exact join: transaction ID
+One login through a Regular Web App with a post-login Action produced:
+
+```
+ACTION transaction=<tx> session=<sess> ext_trace=<32 hex> client=<client>
+STREAM type=s transaction=<tx> session=<sess> refs_trace=- executions=1
+MATCH transaction=yes session=yes ext_trace_in_stream=no refs_trace_equals_ext=no
+```
+
+What this proves:
+
+- `event.transaction.id` equals `details.transaction_id`. Exact.
+- `event.session.id` equals `details.session_id`. Exact.
+- `ext-trace_id` reaches the Action but does not appear anywhere in the streamed event.
+- `references.trace_id` is absent on this event. It is not our trace.
+- `details.actions.executions` is present once the Action is attached. The execution ID is in
+  the stream.
+
+The log stream wraps each event as `{ "log_id": "...", "data": { ... } }`. The parser must
+unwrap `data`; a flat event from the Management API still works.
+
+## The exact join: transaction ID
 
 | Side | Field | Documentation |
 | --- | --- | --- |
 | Post-login Action | `event.transaction.id` | "Unique identifier for the transaction. Populated for all browser-based login flows." |
 | Tenant log event | `details.transaction_id` | "Transaction ID to correlate log events that belong to the same authentication transaction." |
 
-The transaction is per login attempt, which matches one journey per attempt. If the two values
-are equal, the Action can emit a salted hash and the stitcher can join the feed event exactly
-on tenant plus transaction hash. No `ext-` parameter is involved.
+Use the transaction hash, not the session, as the primary key. A session can span several
+logins. A transaction is one authentication transaction.
 
-The docs do not state that the values are identical. That needs one real-tenant measurement.
+## A transaction can contain a failed attempt and a successful retry
 
-## The second candidate: session ID
+In the test, a wrong password produced an `fp` event, then the same user succeeded. Both
+events carried the same `transaction_id`. The Action only ran for the successful attempt.
 
-| Side | Field | Documentation |
-| --- | --- | --- |
-| Post-login Action | `event.session.id` | "The ID of the current session." |
-| Tenant log event | `details.session_id` | Present in the schema, no description |
+That matters for outcome derivation.
 
-A session can span several logins, so a session join is weaker than a transaction join for
-one-journey-per-attempt. Use it as a fallback, not the primary key.
+- The current rule marks a journey `failed` if any event is a failure. With an exact
+  transaction join, a failed attempt followed by a success would be labelled `failed` even
+  though the user got in.
+- The rule should follow the latest terminal signal: a success event or ok callback after a
+  failure makes the journey `success`. A failure after a success makes it `failed`. A deny
+  stays terminal.
+- The journey should keep both events as steps, so the retry is visible.
 
-## What about Action execution IDs
-
-Login events can include `details.actions.executions[]`, a list of execution IDs. The
-Management API get-execution endpoint retrieves one, for 10 days. Its response contains, per
-action:
-
-- `action_name`
-- `error`
-- `started_at`
-- `ended_at`
-
-It does not include the Action input event, so it cannot recover `event.request.query.ext_trace_id`.
-It is useful for enriching a hook's name, error and duration without our wrapper, but it is not
-a correlation path to our trace.
-
-This does revise an older assumption. Action execution IDs are in Log Streams. Full execution
-details are one Management API call away. Neither carries the trace ID.
-
-## What about references.trace_id
-
-The schema describes `references.trace_id` as a W3C trace ID (32 hex) for distributed traces.
-Nothing documents how it is populated or how to supply one. `traceparent` appears in the
-MyAccount API docs, not in the login or log stream docs. The browser cannot send a `traceparent`
-header on a top-level redirect. Treat this as Auth0's internal trace until proven otherwise.
+A failure event can arrive before the Action's hook span. Pending adoption therefore has to
+match on transaction ID, not only on user hash.
 
 ## What this means for auththread
 
 `ext-trace_id` remains the only customer-controlled value that survives `/authorize` into the
 page and the post-login Action. It still does not appear in the log event.
 
-The feed can become exact without it:
+The feed join can be exact without it:
 
-1. On a real tenant, log in once with an Action that records `event.transaction.id`.
-2. Capture the streamed event and compare `details.transaction_id`.
-3. If equal, add `auth.transaction.hash` (salted, never raw) to the hook span and the feed
-   event, and join on it.
-4. If they differ, repeat for `event.session.id` and `details.session_id`.
-5. If both fail, the tenant's events predate these fields and hints remain.
+1. Add `auth.transaction.id` to the hook span and the provider event.
+2. Index the transaction ID as a hint, scoped by tenant.
+3. Treat a transaction match as exact, and set the matched trace ID on the event so
+   `correlationCounts.exact` is true.
+4. Keep the user-hash hint as a fallback for events without a transaction, such as failures
+   before any hook runs.
+5. Change outcome derivation to use the latest terminal success or failure, with deny still
+   terminal.
+6. Add tests for failure then success, success then failure, and a denied attempt followed by
+   nothing.
 
-The step by step probe is in `docs/research/auth0-probe.md`. It prints both sides and a match
-line for the transaction and session.
+## What about Action execution IDs
 
-Until that measurement runs, the hint join stays. It is correct, but it is probabilistic where
-an exact join may exist.
+The stream carries `details.actions.executions[]`, confirmed on the tenant. The Management API
+get-execution response contains, per action:
+
+- `action_name`
+- `error`
+- `started_at`
+- `ended_at`
+
+It does not include the Action input, so it cannot recover `ext_trace_id`. It is useful for
+enriching hook name, error and duration without our wrapper, not for correlation.
+
+## What about references.trace_id
+
+The schema describes `references.trace_id` as a W3C trace ID (32 hex). It was absent on the
+test login event. Nothing documents how it is populated. `traceparent` appears in the
+MyAccount API docs, not in the login or log stream docs. Treat it as Auth0's trace.
 
 ## Sources
 
