@@ -1,6 +1,6 @@
-# auththread v0.1 design
+# auththread design
 
-This document explains every design decision in the v0.1 implementation, the alternative
+This document explains every design decision in the current implementation, the alternative
 that was rejected, and what evidence exists for each claim. It is written so you can disagree
 with a decision and know exactly what to change.
 
@@ -21,7 +21,7 @@ use: app, hosted login page, server hooks and provider logs as one ordered story
 The unit is a journey, not a request. A journey starts when the user clicks sign in and ends
 when the outcome is known or the journey goes quiet.
 
-v0.1 ships the instrumentation, the stitching and the adapter framework. It does not ship a
+auththread ships the instrumentation, the stitching and the adapter framework. It does not ship a
 UI or a trace store. It does not ship the paid reliability service.
 
 ---
@@ -336,7 +336,7 @@ run one replica per database. The pending list is still per stitcher instance.
 **Rebuttal point.** The plan says one Durable Object per login. That needs a directory that
 maps hints to trace IDs before a trace ID exists, and provider feeds arrive without one. One
 object per tenant is correct but serialises writes for a tenant. Per-journey sharding is the
-right v0.2 change once a hint directory exists.
+right later change once a hint directory exists.
 
 ---
 
@@ -464,7 +464,7 @@ shrinks back to one route with one store, the layers and schemas become overhead
 
 ---
 
-## 15. What v0.1 does not do
+## 15. What this release does not do
 
 - No trace store, UI, alerts, replay tests or AI.
 - No Redis, Postgres, D1, Lambda or Kubernetes runtime.

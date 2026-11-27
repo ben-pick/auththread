@@ -158,7 +158,7 @@ that reasonable.
 
 ## Limits
 
-- NDJSON text only in v0.1. Parquet is a later change, and it will extend the `ObjectStore`
+- NDJSON text only initially. Parquet is a later change, and it will extend the `ObjectStore`
   port to binary bodies.
 - No compression on the wire. The objects are small text files; enable bucket compression if
   you need it.

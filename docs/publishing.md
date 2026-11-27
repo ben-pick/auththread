@@ -24,11 +24,13 @@ specifier leaks, then runs `publint`.
 
 ## Versions
 
-All 15 public packages are in one Changesets fixed group at v0.1. Pre-1.0:
+All 15 public packages are in one Changesets fixed group. Pre-1.0:
 minor = breaking, patch = fix. Split adapters into independent versions only
 when community adapters exist.
 
-## First publish
+## Publishing (initial setup)
+
+The packages are published. These steps document how the initial publish was set up.
 
 1. Claim the `@auththread` npm scope: npmjs.com → Organizations → Create
    organization → `auththread`.

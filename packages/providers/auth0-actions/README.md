@@ -32,7 +32,7 @@ Through the Management API, the dependency is:
 ```json
 {
   "name": "@auththread/auth0-actions",
-  "version": "0.1.0"
+  "version": "0.0.0"
 }
 ```
 

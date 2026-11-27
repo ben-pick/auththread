@@ -5,7 +5,7 @@
 
 ---
 
-## 🎯 THE v0.1 GOAL (read this first)
+## 🎯 THE INITIAL GOAL (read this first)
 
 > **A developer can see one complete login journey (app → hosted login page → server hooks → provider logs) in the observability tool they already use, within 30 minutes of installing.**
 
@@ -13,7 +13,7 @@
 
 **In scope**
 
-| Area | v0.1 ships |
+| Area | The initial release ships |
 | --- | --- |
 | Core | Neutral schema + PII stripping, tiny OTLP exporter, adapter interfaces + conformance tests, stitcher |
 | Providers | **Generic OIDC** (browser tracing for any standards-based provider) · **Auth0** deep (browser helper with `ext-trace_id`, login-page snippet, `withTrace()` Action wrapper, Log Stream ingest) |
@@ -25,7 +25,7 @@
 
 **Rules:** never in the login path · no PII by default · core never imports provider or cloud code · OpenTelemetry by default, never required · MIT licence + DCO sign-off.
 
-**v0.1 is done when ALL of these are true:**
+**The initial release is done when ALL of these are true:**
 
 - [ ] The Keycloak example runs on every PR and shows success, failure and abandoned journeys in Grafana
 - [ ] A three-screen Auth0 login plus a deny Action produces one ordered trace with screen, Action and Auth0 log events
@@ -33,7 +33,7 @@
 - [ ] The Action wrapper adds < 50 ms at p95; the browser SDK is < 5 KB gzipped
 - [ ] It's in production at 3 design-partner teams before public launch
 
-*Everything below this line explains and supports this goal. If a task doesn't serve it, it waits for v0.2.*
+*Everything below this line explains and supports this goal. If a task doesn't serve it, it waits for a later release.*
 
 ---
 
@@ -51,7 +51,7 @@ Auth0 is the first deep integration. A generic OIDC adapter works with any stand
 
 ## 3. Goals and non-goals
 
-### v0.1 goals
+### Initial goals
 
 1. One journey per login attempt, deliverable through pluggable **sinks**:
    - OTLP traces (Datadog, Grafana Tempo, Honeycomb, Jaeger, Elastic, New Relic, Splunk…)
@@ -71,7 +71,7 @@ Auth0 is the first deep integration. A generic OIDC adapter works with any stand
 5. Ready-made Datadog and Grafana dashboards built only on provider-neutral attributes.
 6. Examples: Next.js + Auth0 (Terraform), and Next.js + Keycloak in Docker compose, which needs no cloud account.
 
-### Non-goals (v0.1)
+### Non-goals (initial release)
 
 - Our own trace store or UI (customers use their own tool).
 - Deep adapters beyond Auth0 (the framework must support them; building them comes next).
@@ -211,8 +211,8 @@ An adapter is **supported** when its conformance job is green in CI. Anything el
 
 | Provider | L1 browser | L2 event feed | L3 hooks | L4 hosted page | L5 config | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Generic OIDC (Keycloak, Authentik, Zitadel, Logto…) | ✅ | – | – | – | – | **v0.1** |
-| Auth0 | ✅ | Log Streams | Actions | Page template / ACUL | Management API | **v0.1** |
+| Generic OIDC (Keycloak, Authentik, Zitadel, Logto…) | ✅ | – | – | – | – | **shipped** |
+| Auth0 | ✅ | Log Streams | Actions | Page template / ACUL | Management API | **shipped** |
 | Amazon Cognito | ✅ | CloudTrail / CloudWatch | Lambda triggers | verify | Admin API | Phase 3 |
 | Okta | ✅ | Event hooks / System Log | Inline hooks | verify | Admin API | Phase 3 |
 | Supabase Auth | ✅ | Auth logs | Auth hooks (Postgres/HTTP) | n/a (own UI) | – | Phase 3 |
@@ -229,8 +229,8 @@ An adapter is **supported** when its conformance job is green in CI. Anything el
 
 | Runtime | Buffer | Scheduler | Settings | Status |
 | --- | --- | --- | --- | --- |
-| Cloudflare Workers | Durable Object per journey | DO alarms | D1 | **v0.1** |
-| Node / Docker (any cloud: ECS, Cloud Run, Azure Container Apps, Fly, bare VM) | Memory (single node) or Redis | In-process timer or Redis sorted set | SQLite or Postgres | **v0.1** |
+| Cloudflare Workers | Durable Object per journey | DO alarms | D1 | **shipped** |
+| Node / Docker (any cloud: ECS, Cloud Run, Azure Container Apps, Fly, bare VM) | Memory (single node) or Redis | In-process timer or Redis sorted set | SQLite or Postgres | **shipped** |
 | Kubernetes | Redis | Redis | Postgres | Kubernetes example, deferred |
 | AWS Lambda + API Gateway | DynamoDB (TTL) | EventBridge Scheduler or DynamoDB TTL stream | Postgres/DynamoDB | Community |
 | Vercel / Netlify functions | Upstash Redis | Redis + cron | Postgres | Community |
@@ -269,9 +269,9 @@ export interface SamplingPolicy {
 
 | Sink | Output | Covers | Status |
 | --- | --- | --- | --- |
-| `otlp` (HTTP/protobuf + JSON) | Spans (+ optional OTLP logs) | Any OTLP backend or Collector: Grafana, Honeycomb, Jaeger, Elastic, New Relic, Splunk Observability, Datadog via Collector/Agent OTLP ingest | **v0.1** |
-| `wide-event-stdout` | Journey JSON lines | Any log shipper already scraping containers (Vector, Fluent Bit, CloudWatch, Cloud Logging) | **v0.1** |
-| `webhook` | Journey JSON, HMAC-signed | Anything with an HTTP endpoint: Zapier-style tools, custom pipelines, Slack via a relay | **v0.1** |
+| `otlp` (HTTP/protobuf + JSON) | Spans (+ optional OTLP logs) | Any OTLP backend or Collector: Grafana, Honeycomb, Jaeger, Elastic, New Relic, Splunk Observability, Datadog via Collector/Agent OTLP ingest | **shipped** |
+| `wide-event-stdout` | Journey JSON lines | Any log shipper already scraping containers (Vector, Fluent Bit, CloudWatch, Cloud Logging) | **shipped** |
+| `webhook` | Journey JSON, HMAC-signed | Anything with an HTTP endpoint: Zapier-style tools, custom pipelines, Slack via a relay | **shipped** |
 | `object-store` | NDJSON (Parquet later) per time window | S3 / GCS / Azure Blob / R2 → Athena, BigQuery, Snowflake, ClickHouse | Phase 2 |
 | `datadog-native` | Datadog logs/spans API | Teams without a Collector or Agent | Community |
 | `splunk-hec` | HEC events | Splunk Enterprise without OTel | Community |
@@ -293,7 +293,7 @@ export interface SamplingPolicy {
 - **No OTel anywhere:** the browser and hook emitters post compact JSON to the stitcher. The team picks a `wide-event-*` or `webhook` sink and never touches OpenTelemetry.
 - **Semantic conventions:** `auth.*` names are ours until accepted upstream. A versioned mapping file (`schema/mappings/`) lets sinks rename attributes for backends with their own conventions (e.g. Elastic ECS), so we're not locked to our own naming either.
 
-## 7. Journey schema v0.1 (draft, provider-neutral)
+## 7. Journey schema (draft, provider-neutral)
 
 Namespace `auth.*`, proposed as OpenTelemetry semantic conventions for authentication.
 
@@ -391,7 +391,7 @@ auththread/
 
 - **`@auththread/schema`:** neutral constants and types, `redact()`, `hashUser()`, `rootSpanId()`, `newTraceId()`, and the neutral enums (`auth.method`, `auth.ui.stage`, `auth.hook.stage`, `auth.outcome`). **Done when:** 100% coverage on redaction plus property tests.
 - **`@auththread/otlp`:** OTLP/HTTP JSON exporter with batching, timeout and retry-once; works in browsers, Workers, Node and serverless hooks. **Done when:** validated against a real OpenTelemetry Collector in CI, and under 5 KB gzipped.
-- **`@auththread/adapter-kit`:** the interfaces in §6 plus the three conformance runners. **Done when:** both v0.1 providers and both v0.1 runtimes pass, and a deliberately broken fake adapter fails.
+- **`@auththread/adapter-kit`:** the interfaces in §6 plus the three conformance runners. **Done when:** both providers and both runtimes pass, and a deliberately broken fake adapter fails.
 - **`@auththread/stitcher-core`:** `createStitcher(deps)`. Ingests OTLP spans and provider feeds, redacts again, buffers per trace ID and joins unmatched events by scored hints within ±2 min. It finalises on a terminal event or after a quiet period (default 10 min), then emits the root span and exports. It's idempotent and order-tolerant. **Done when:** the end-to-end conformance corpus produces byte-identical traces on every runtime.
 - **`@auththread/browser`:**
 
@@ -507,7 +507,7 @@ thread.callback(window.location); // on the callback route
 - [ ] Capability check: confirm the "verify" cells in §6.5 for Cognito, Okta and Clerk (docs only)
 - **Gate:** at least 5 teams describe the gap (ideally on more than one provider), and the trace ID survives end to end on Auth0. **Kill signal:** teams say their observability tool plus provider logs is enough.
 
-### Phase 1: v0.1 open-source release (weeks 3-8)
+### Phase 1: initial open-source release (weeks 3-8)
 
 - [ ] Week 3: repo scaffold, CI matrix, dependency-cruiser rules, `schema`, `otlp`, `adapter-kit` interfaces
 - [ ] Week 4: `stitcher-core` + conformance kits + shared journey corpus; `oidc` provider + Keycloak example on `node` runtime
@@ -589,7 +589,7 @@ Official deep adapters: Cognito, then Okta or Supabase. Terraform modules for AW
 7. Which hosted login pages allow custom JS (Cognito managed login, Okta, Clerk, WorkOS)? This decides L4 coverage.
 8. Should the OpenTelemetry Collector processor (Go) be a Phase 2 runtime for teams standardised on the Collector?
 9. Wide-event schema: how much step detail before records get too large for log pipelines (target under 8 KB per journey)?
-10. Propose `auth.*` to the OpenTelemetry semantic-conventions SIG after v0.1, or wait for adoption first?
+10. Propose `auth.*` to the OpenTelemetry semantic-conventions SIG after the initial release, or wait for adoption first?
 
 ## 18. References
 

@@ -1,11 +1,11 @@
 ---
 id: "0008"
-title: "Page snippet supply chain is manual in v0.1"
+title: "Page snippet supply chain is manual in the initial release"
 scope:
   - "packages/providers/auth0/page/**"
 ---
 
-# 0008. Page snippet supply chain is manual in v0.1
+# 0008. Page snippet supply chain is manual in the initial release
 
 ## Outcome
 
@@ -23,5 +23,5 @@ scope:
 ## Why
 
 `PLAN.md` wants a versioned, SRI-pinned artifact. A build pipeline for one 60 line script is
-not the v0.1 bottleneck, and shipping an unsigned hash would look stronger than it is. The
+not the initial bottleneck, and shipping an unsigned hash would look stronger than it is. The
 manual step is recorded so nobody assumes provenance exists.

@@ -2,7 +2,9 @@
 
 **See one login journey end to end, in the observability/analytics tool you already use.**
 
-[![status](https://img.shields.io/badge/status-v0.1-1f6feb)](#roadmap)
+[![status](https://img.shields.io/badge/status-early-1f6feb)](#roadmap)
+[![CI](https://github.com/ben-pick/auththread/actions/workflows/ci.yml/badge.svg)](https://github.com/ben-pick/auththread/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/%40auththread%2Fsdk?label=npm&color=cb3837)](https://www.npmjs.com/package/@auththread/sdk)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933)](#compatibility)
 [![otel](https://img.shields.io/badge/OpenTelemetry-optional-425CC7)](https://opentelemetry.io)
@@ -13,7 +15,7 @@ Auththread stitches the app, the hosted login page, server-side hooks and provid
 one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
 Auththread is the solution!
 
-> **Status: v0.1, early.** 
+> **Status: early.**
 
 ## Contents
 
@@ -87,8 +89,8 @@ file is provided but has not been run in CI yet.
 
 | Provider | Level | Status | Notes |
 | --- | --- | --- | --- |
-| Generic OIDC | L1 | **v0.1** | Any OIDC or OAuth 2.0 provider |
-| Auth0 | L1 to L5 | **v0.1** | Browser params, Log Streams, Actions, page snippet, config fetch |
+| Generic OIDC | L1 | **shipped** | Any OIDC or OAuth 2.0 provider |
+| Auth0 | L1 to L5 | **shipped** | Browser params, Log Streams, Actions, page snippet, config fetch |
 | Keycloak deep | L2, L4 | planned | Admin API events and login theme |
 | Cognito, Okta, Supabase, Clerk, WorkOS, Firebase | L1, plus native hooks where available | community | Conformance defines done |
 
@@ -96,8 +98,8 @@ file is provided but has not been run in CI yet.
 
 | Runtime | Storage | Scheduler | Status |
 | --- | --- | --- | --- |
-| Node / Docker | Memory, or SQLite with WAL when `AUTHTHREAD_DB` is set | In-process timer | **v0.1** |
-| Cloudflare Workers | Durable Object storage, one object per tenant | Alarms | **v0.1** |
+| Node / Docker | Memory, or SQLite with WAL when `AUTHTHREAD_DB` is set | In-process timer | **shipped** |
+| Cloudflare Workers | Durable Object storage, one object per tenant | Alarms | **shipped** |
 | Redis or Valkey, Postgres, D1 | | | planned |
 | Lambda, Kubernetes, Vercel, Netlify | | | later or community |
 
@@ -105,10 +107,10 @@ file is provided but has not been run in CI yet.
 
 | Sink | Output | Status |
 | --- | --- | --- |
-| OTLP | Spans to any OTLP backend | **v0.1** |
-| Wide event | One JSON line per journey to stdout | **v0.1** |
-| Webhook | HMAC-SHA256 signed journey JSON | **v0.1** |
-| Object store | NDJSON objects in S3, R2 or MinIO | **v0.1** |
+| OTLP | Spans to any OTLP backend | **shipped** |
+| Wide event | One JSON line per journey to stdout | **shipped** |
+| Webhook | HMAC-SHA256 signed journey JSON | **shipped** |
+| Object store | NDJSON objects in S3, R2 or MinIO | **shipped** |
 | Parquet | Object store with predicate pushdown | planned |
 | Native ClickHouse | Direct `JSONEachRow` insert | proposed |
 | Datadog native, Splunk HEC, Kafka, OpenID SSF | | community |
@@ -195,23 +197,37 @@ the stitcher agree without a round trip.
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
-| [`@auththread/schema`](packages/core/schema) | Neutral attributes, redaction, ids, journey and wide event |
-| [`@auththread/otlp`](packages/core/otlp) | OTLP/HTTP JSON encoder and exporters |
-| [`@auththread/adapter-kit`](packages/core/adapter-kit) | Effect contracts, memory layers, conformance suites, corpus |
-| [`@auththread/stitcher`](packages/core/stitcher) | `Stitcher` service, Effect HTTP routes and the join |
-| [`@auththread/sdk`](packages/sdk) | Effect server SDK facade: neutral core, `./node`, `./cloudflare` |
-| [`@auththread/browser`](packages/core/browser) | Provider-neutral browser SDK |
-| [`@auththread/oidc`](packages/providers/oidc) | Generic OIDC adapter; browser helper at `/browser` |
-| [`@auththread/auth0`](packages/providers/auth0) | Adapter; browser helper at `/browser`, Action wrapper, page snippet |
-| [`@auththread/auth0-actions`](packages/providers/auth0-actions) | Dependency-free CommonJS wrapper for Auth0 Actions |
-| [`@auththread/runtime-node`](packages/runtimes/node) | Node server layer, poll scheduler, file settings, SQLite buffer |
-| [`@auththread/runtime-cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
-| [`@auththread/sink-otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
-| [`@auththread/sink-wide-event`](packages/sinks/wide-event) | One JSON journey per line |
-| [`@auththread/sink-webhook`](packages/sinks/webhook) | Signed journey JSON |
-| [`@auththread/sink-object-store`](packages/sinks/object-store) | NDJSON journeys in S3, R2 or MinIO |
+All 15 public packages are published to npm together on one fixed version train. The badge
+shows the current published version; the source link points at its workspace directory.
+Release notes are in [GitHub Releases](https://github.com/ben-pick/auththread/releases).
+
+```sh
+pnpm add @auththread/sdk
+# or a focused package
+pnpm add @auththread/browser @auththread/auth0
+```
+
+| Package | Version | Source | Purpose |
+| --- | --- | --- | --- |
+| [`@auththread/schema`](https://www.npmjs.com/package/@auththread/schema) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fschema?style=flat-square)](https://www.npmjs.com/package/@auththread/schema) | [`packages/core/schema`](packages/core/schema) | Neutral attributes, redaction, ids, journey and wide event |
+| [`@auththread/otlp`](https://www.npmjs.com/package/@auththread/otlp) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fotlp?style=flat-square)](https://www.npmjs.com/package/@auththread/otlp) | [`packages/core/otlp`](packages/core/otlp) | OTLP/HTTP JSON encoder and exporters |
+| [`@auththread/adapter-kit`](https://www.npmjs.com/package/@auththread/adapter-kit) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fadapter-kit?style=flat-square)](https://www.npmjs.com/package/@auththread/adapter-kit) | [`packages/core/adapter-kit`](packages/core/adapter-kit) | Effect contracts, memory layers, conformance suites, corpus |
+| [`@auththread/stitcher`](https://www.npmjs.com/package/@auththread/stitcher) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fstitcher?style=flat-square)](https://www.npmjs.com/package/@auththread/stitcher) | [`packages/core/stitcher`](packages/core/stitcher) | `Stitcher` service, Effect HTTP routes and the join |
+| [`@auththread/sdk`](https://www.npmjs.com/package/@auththread/sdk) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fsdk?style=flat-square)](https://www.npmjs.com/package/@auththread/sdk) | [`packages/sdk`](packages/sdk) | Effect server SDK facade: neutral core, `./node`, `./cloudflare` |
+| [`@auththread/browser`](https://www.npmjs.com/package/@auththread/browser) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fbrowser?style=flat-square)](https://www.npmjs.com/package/@auththread/browser) | [`packages/core/browser`](packages/core/browser) | Provider-neutral browser SDK |
+| [`@auththread/oidc`](https://www.npmjs.com/package/@auththread/oidc) | [![npm](https://img.shields.io/npm/v/%40auththread%2Foidc?style=flat-square)](https://www.npmjs.com/package/@auththread/oidc) | [`packages/providers/oidc`](packages/providers/oidc) | Generic OIDC adapter; browser helper at `/browser` |
+| [`@auththread/auth0`](https://www.npmjs.com/package/@auththread/auth0) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fauth0?style=flat-square)](https://www.npmjs.com/package/@auththread/auth0) | [`packages/providers/auth0`](packages/providers/auth0) | Adapter; browser helper at `/browser`, Action wrapper, page snippet |
+| [`@auththread/auth0-actions`](https://www.npmjs.com/package/@auththread/auth0-actions) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fauth0-actions?style=flat-square)](https://www.npmjs.com/package/@auththread/auth0-actions) | [`packages/providers/auth0-actions`](packages/providers/auth0-actions) | Dependency-free CommonJS wrapper for Auth0 Actions |
+| [`@auththread/runtime-node`](https://www.npmjs.com/package/@auththread/runtime-node) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fruntime-node?style=flat-square)](https://www.npmjs.com/package/@auththread/runtime-node) | [`packages/runtimes/node`](packages/runtimes/node) | Node server layer, poll scheduler, file settings, SQLite buffer |
+| [`@auththread/runtime-cloudflare`](https://www.npmjs.com/package/@auththread/runtime-cloudflare) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fruntime-cloudflare?style=flat-square)](https://www.npmjs.com/package/@auththread/runtime-cloudflare) | [`packages/runtimes/cloudflare`](packages/runtimes/cloudflare) | Durable Object buffer, alarms, key directory |
+| [`@auththread/sink-otlp`](https://www.npmjs.com/package/@auththread/sink-otlp) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fsink-otlp?style=flat-square)](https://www.npmjs.com/package/@auththread/sink-otlp) | [`packages/sinks/otlp`](packages/sinks/otlp) | Spans to any OTLP backend |
+| [`@auththread/sink-wide-event`](https://www.npmjs.com/package/@auththread/sink-wide-event) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fsink-wide-event?style=flat-square)](https://www.npmjs.com/package/@auththread/sink-wide-event) | [`packages/sinks/wide-event`](packages/sinks/wide-event) | One JSON journey per line |
+| [`@auththread/sink-webhook`](https://www.npmjs.com/package/@auththread/sink-webhook) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fsink-webhook?style=flat-square)](https://www.npmjs.com/package/@auththread/sink-webhook) | [`packages/sinks/webhook`](packages/sinks/webhook) | Signed journey JSON |
+| [`@auththread/sink-object-store`](https://www.npmjs.com/package/@auththread/sink-object-store) | [![npm](https://img.shields.io/npm/v/%40auththread%2Fsink-object-store?style=flat-square)](https://www.npmjs.com/package/@auththread/sink-object-store) | [`packages/sinks/object-store`](packages/sinks/object-store) | NDJSON journeys in S3, R2 or MinIO |
+
+Published `engines.node`: `>=20` for the core, adapters and sinks, `>=22.5` for
+`@auththread/runtime-node`, `>=24` for `@auththread/sdk`, and `>=18` for the
+`@auththread/auth0-actions` wrapper. The workspace and server require Node 24.
 
 ### Deployment and local artifacts
 
@@ -235,7 +251,7 @@ are deferred; the install contract is the seam they will wrap.
 - **Browsers**: `sessionStorage`, `fetch` with keepalive, WebCrypto for hashing.
 - **Backends**: any OTLP/HTTP JSON endpoint, log pipeline, HTTP receiver, or S3-compatible
   object store.
-- **Not yet**: the first npm publish, Redis or Postgres storage, a UI or trace store.
+- **Not yet**: Redis or Postgres storage, a UI or trace store.
 
 ## Verification
 
@@ -255,9 +271,9 @@ Current status: `pnpm check` is green and `pnpm boundaries` reports no violation
 
 ## Roadmap
 
-### Shipped in v0.1
+### Shipped
 
-- [x] Neutral schema, double redaction, wide event v1
+- [x] Neutral schema, double redaction, wide event
 - [x] OTLP encoder, batch exporter and OTLP sink
 - [x] Stitcher with exact trace and transaction joins, quiet finalisation
 - [x] Generic OIDC browser adapter
