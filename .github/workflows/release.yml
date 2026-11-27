@@ -32,17 +32,23 @@ jobs:
           fi
       # Opens or updates the version PR. Merging it publishes every public
       # package in the fixed train with npm provenance.
-      - uses: changesets/action@v1
+      # v2 is required for @changesets/cli v3: it reads CHANGESETS_OUTPUT to
+      # push tags and create GitHub releases after a publish.
+      - uses: changesets/action@v2
         with:
-          version: pnpm version-packages
-          publish: pnpm release
-          commit: "chore: release"
-          title: "chore: release"
+          version-script: pnpm version-packages
+          publish-script: pnpm release
+          commit-message: "chore: release"
+          pr-title: "chore: release"
+          pr-base-branch: main
+          create-github-releases: true
+          push-git-tags: true
+          # Use a PAT if the repo does not allow GitHub Actions to create PRs,
+          # or if the release PR needs to trigger CI. GITHUB_TOKEN as an env
+          # variable does not configure v2.
+          github-token: ${{ secrets.RELEASE_TOKEN || github.token }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For the first publish, create a granular npm access token with
-          # @auththread read/write access and store it as NPM_TOKEN. After the
-          # packages exist, configure npm trusted publishing for this workflow
-          # and remove the token.
+          # The first publish uses a granular token. Once the packages exist,
+          # configure trusted publishing and leave NPM_TOKEN unset.
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
