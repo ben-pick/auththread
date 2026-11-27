@@ -18,6 +18,11 @@ export type {
 export { runRuntimeConformance } from "./conformance/runtime.ts";
 export type { SinkConformanceInput } from "./conformance/sink.ts";
 export { runSinkConformance } from "./conformance/sink.ts";
+export type {
+  UiScreenExpectation,
+  UiScreenFixture,
+} from "./conformance/ui-screen.ts";
+export { runUiScreenConformance } from "./conformance/ui-screen.ts";
 export type { JourneyFixture } from "./corpus.ts";
 export { journeyCorpus, journeyOf, piiCorpus } from "./corpus.ts";
 export {
@@ -61,5 +66,12 @@ export {
   Secrets,
   SettingsStore,
 } from "./runtime.ts";
+export type {
+  ScreenMap,
+  UiScreenClassification,
+  UiScreenInput,
+  UiScreenRule,
+} from "./screen-map.ts";
+export { defineScreenMap } from "./screen-map.ts";
 export type { SamplingPolicy, Sink, SinkBatch } from "./sink.ts";
 export { DEFAULT_SAMPLING, sampleScore, shouldKeep } from "./sink.ts";

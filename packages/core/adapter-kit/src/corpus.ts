@@ -87,11 +87,11 @@ const oidcSuccess: JourneyFixture = {
       "auth.method": "password",
     }),
     span(oidcTrace, "02", "auth.ui.screen", BASE + 120, 900, {
-      "auth.ui.step": "identifier",
+      "auth.ui.stage": "identify",
       "auth.method": "password",
     }),
     span(oidcTrace, "03", "auth.ui.screen", BASE + 1100, 1400, {
-      "auth.ui.step": "password",
+      "auth.ui.stage": "authenticate",
       "auth.method": "password",
     }),
     span(
@@ -129,7 +129,7 @@ const auth0Denied: JourneyFixture = {
       "auth.method.vendor_name": "google-oauth2",
     }),
     span(auth0Trace, "12", "auth.ui.screen", BASE + 140, 800, {
-      "auth.ui.step": "identifier",
+      "auth.ui.stage": "identify",
       "auth.ui.vendor_screen": "login",
     }),
     span(
@@ -190,11 +190,11 @@ const abandoned: JourneyFixture = {
       "auth.method": "passwordless",
     }),
     span(abandonedTrace, "22", "auth.ui.screen", BASE + 150, 2500, {
-      "auth.ui.step": "identifier",
+      "auth.ui.stage": "identify",
     }),
     span(abandonedTrace, "23", "auth.ui.screen", BASE + 2700, 300, {
-      "auth.ui.step": "mfa_challenge",
-      "auth.abandoned_at": "mfa_challenge",
+      "auth.ui.stage": "verify",
+      "auth.abandoned_at": "verify",
     }),
   ],
   events: [],

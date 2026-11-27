@@ -1,6 +1,6 @@
 import {
   type Attributes,
-  type AuthUiStep,
+  type AuthUiStage,
   isTraceId,
   type JourneyKind,
   newSpanId,
@@ -48,7 +48,7 @@ export interface AuthThreadBrowser {
   authorizeParams(): Record<string, string>;
   callback(url: string | URL): CallbackResult;
   tokenExchange(durationMs: number): void;
-  abandon(step: AuthUiStep): void;
+  abandon(stage: AuthUiStage): void;
   /** Sends every queued span now. Called automatically on a batch or a page hide. */
   flush(): void;
 }
@@ -221,7 +221,6 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
       const error = parsed.searchParams.get("error") ?? undefined;
       const code = parsed.searchParams.get("code");
       const failure = error ?? (code === null ? "missing_code" : undefined);
-      const startedAt = Number(storage.getItem(STARTED_KEY) ?? String(now()));
       const finishedAt = now();
       const id = trace();
       clear(storage, PENDING_KEY);
@@ -231,7 +230,7 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
           id,
           "auth.app.callback",
           finishedAt,
-          Math.max(0, finishedAt - startedAt),
+          0,
           {
             ...base,
             ...(failure === undefined
@@ -268,7 +267,7 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
       );
     },
 
-    abandon(step) {
+    abandon(stage) {
       const at = now();
       clear(storage, PENDING_KEY);
       emit(
@@ -277,7 +276,11 @@ export function init(options: BrowserOptions): AuthThreadBrowser {
           "auth.ui.screen",
           at,
           0,
-          { ...base, "auth.ui.step": step, "auth.abandoned_at": step },
+          {
+            ...base,
+            "auth.ui.stage": stage,
+            "auth.abandoned_at": stage,
+          },
           { code: "unset" },
         ),
       );

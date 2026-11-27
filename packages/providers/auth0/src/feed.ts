@@ -4,18 +4,13 @@ import type {
   ParseContext,
 } from "@auththread/adapter-kit";
 import {
+  isSignupEventType,
   isTraceId,
   type Outcome,
+  outcomeOfProviderEvent,
   type ProviderEvent,
 } from "@auththread/schema";
 import { Effect, Option, Schema } from "effect";
-
-export interface Auth0FeedSettings {
-  /** Auth0 log stream custom header value. Without it, every feed request is rejected. */
-  readonly feedSecret?: string;
-  readonly domain?: string;
-  readonly managementToken?: string;
-}
 
 export const Auth0FeedSettingsSchema = Schema.Struct({
   feedSecret: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
@@ -24,6 +19,10 @@ export const Auth0FeedSettingsSchema = Schema.Struct({
     Schema.String.check(Schema.isMinLength(1)),
   ),
 });
+
+export type Auth0FeedSettings = Schema.Schema.Type<
+  typeof Auth0FeedSettingsSchema
+>;
 
 export const AUTH0_FEED_PATH = "/log-stream";
 export const AUTH0_FEED_SECRET_HEADER = "x-auththread-feed-secret";
@@ -118,7 +117,7 @@ const eventOf = (
   const connection = entry.connection;
   const transactionId = details.transaction_id;
   const neutral = NEUTRAL_TYPE[entry.type] ?? "provider_event";
-  const kind = neutral.startsWith("signup_") ? "signup" : undefined;
+  const kind = isSignupEventType(neutral) ? "signup" : undefined;
   const logId = entry.log_id;
   if (logId === undefined) return [];
 
@@ -207,11 +206,7 @@ export function classifyAuth0Type(code: string): {
   errorCode?: string;
 } {
   const neutral = NEUTRAL_TYPE[code] ?? "";
-  const outcome: Outcome | undefined = neutral.includes("success")
-    ? "success"
-    : neutral.includes("failure") || neutral === "rate_limited"
-      ? "failed"
-      : undefined;
+  const outcome = outcomeOfProviderEvent(neutral);
   return {
     ...(outcome === undefined ? {} : { outcome }),
     ...(ERROR_CODE[code] === undefined ? {} : { errorCode: ERROR_CODE[code] }),

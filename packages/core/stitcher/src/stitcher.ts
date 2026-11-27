@@ -14,6 +14,7 @@ import {
 } from "@auththread/adapter-kit";
 import {
   type Attributes,
+  type AttributeValue,
   buildJourney,
   type CorrelationHints,
   hashUser,
@@ -21,6 +22,8 @@ import {
   type ProviderEvent,
   redactAttributes,
   redactSpan,
+  rootSpanId,
+  SPAN_NAMES,
   type Span,
   sha256Hex,
   sortSpans,
@@ -127,6 +130,63 @@ const json = (body: unknown, status = 200): Response =>
 
 const stringValue = (value: unknown): string | undefined =>
   Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
+
+/**
+ * The snippet sends vendor facts. The adapter owns the neutral meaning. This
+ * runs after redaction and before buffering so the stored span, the OTLP export
+ * and the wide event all agree on stage/method.
+ */
+const normalizeUiSpan = (
+  span: Span,
+  adapter: ProviderAdapter<unknown> | undefined,
+): Span => {
+  if (span.name !== SPAN_NAMES.uiScreen) return span;
+
+  const vendorScreen = stringValue(span.attributes["auth.ui.vendor_screen"]);
+  const vendorPath = stringValue(span.attributes["auth.ui.vendor_path"]);
+  const legacyStep = stringValue(span.attributes["auth.ui.step"]);
+  const rule =
+    adapter?.classifyUiScreen?.({
+      ...(vendorScreen === undefined ? {} : { vendorScreen }),
+      ...(vendorPath === undefined ? {} : { vendorPath }),
+      ...(legacyStep === undefined ? {} : { legacyStep }),
+    }) ?? {};
+
+  const attributes: Record<string, AttributeValue> = { ...span.attributes };
+  delete attributes["auth.ui.step"];
+  // A snippet span is identified by its vendor screen/path. Its neutral meaning
+  // is server-derived, so do not trust a client-supplied stage or abandonment.
+  if (
+    vendorScreen !== undefined ||
+    vendorPath !== undefined ||
+    legacyStep !== undefined
+  ) {
+    delete attributes["auth.ui.stage"];
+    delete attributes["auth.abandoned_at"];
+    delete attributes["auth.abandoned_screen"];
+  }
+
+  if (rule.stage !== undefined) attributes["auth.ui.stage"] = rule.stage;
+  if (rule.method !== undefined) attributes["auth.method"] = rule.method;
+  if (rule.methodVendorName !== undefined) {
+    attributes["auth.method.vendor_name"] = rule.methodVendorName;
+  }
+
+  const abandoned = attributes["auth.ui.abandoned"] === true;
+  delete attributes["auth.ui.abandoned"];
+  if (abandoned) {
+    if (rule.stage !== undefined) attributes["auth.abandoned_at"] = rule.stage;
+    if (vendorScreen !== undefined) {
+      attributes["auth.abandoned_screen"] = vendorScreen;
+    }
+  }
+
+  return {
+    ...span,
+    parentSpanId: span.parentSpanId ?? rootSpanId(span.traceId),
+    attributes,
+  };
+};
 
 const hintsOf = (
   attributes: Attributes,
@@ -601,9 +661,12 @@ const makeStitcher = (
                     "auth.tenant": tenant.tenant,
                   },
           };
-          const clean = redactSpan(stamped, {
-            ...(tenant === undefined ? {} : { salt: tenant.salt }),
-          });
+          const clean = normalizeUiSpan(
+            redactSpan(stamped, {
+              ...(tenant === undefined ? {} : { salt: tenant.salt }),
+            }),
+            tenant === undefined ? undefined : providers.get(tenant.provider),
+          );
           yield* assertOwner(span.traceId, tenant);
           if (!(yield* takeSlot(span.traceId))) return;
 

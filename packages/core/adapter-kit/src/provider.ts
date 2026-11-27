@@ -7,6 +7,7 @@ import type {
 } from "@auththread/schema";
 import type { Effect } from "effect";
 import type { FeedError, ProviderError } from "./errors.ts";
+import type { UiScreenClassification, UiScreenInput } from "./screen-map.ts";
 
 export const CAPABILITIES = [
   "browser",
@@ -68,6 +69,8 @@ export interface ProviderAdapter<Settings = unknown> {
   correlate(event: ProviderEvent, settings: Settings): Correlation;
   /** Pure: maps a provider code to a neutral outcome. */
   classify(event: ProviderEvent): { outcome?: Outcome; errorCode?: string };
+  /** L4: map a hosted-page screen onto the neutral stage/method model. */
+  classifyUiScreen?(screen: UiScreenInput): UiScreenClassification;
   /** L5: fetch hook versions for change tracking. */
   fetchConfig?(
     settings: Settings,

@@ -130,7 +130,7 @@ The object store is readable by analytics engines without a pipeline.
 | L1 | `browser` | Login start, redirect, callback, token timing, abandonment |
 | L2 | `event-feed` | Provider events joined to the journey |
 | L3 | `hooks` | Per-hook spans: duration, decision, errors |
-| L4 | `hosted-page` | Per-screen spans and UI errors |
+| L4 | `hosted-page` | Per-screen stages, timing, retry, abandonment, passkey and delegation |
 | L5 | `config` | Hook and config versions for change tracking |
 
 A provider is supported at a level only when its conformance suite is green.
@@ -246,7 +246,7 @@ mise exec -- pnpm pack:check  # tarball contents, protocols, declaration imports
 mise exec -- pnpm demo    # one journey from the corpus
 mise exec -- pnpm smoke   # the real HTTP surface
 mise exec -- pnpm graph   # package graph; --base <ref> --format markdown for a PR diff
-mise exec -- pnpm budget  # current bundle sizes against their budgets
+mise exec -- pnpm budget  # current bundle sizes; SDK 2,482 B, snippet 3,055 B gzip
 mise exec -- pnpm budget --base origin/main --format markdown  # PR bundle report
 ```
 
@@ -277,6 +277,8 @@ Current status: `pnpm check` is green and `pnpm boundaries` reports no violation
 - [ ] Keycloak L2 events through the Admin API and L4 through a login theme
 - [ ] Auth0 page error detection for failed-only logins
 - [x] Ship the Auth0 Action wrapper in a form Actions can require (ESM and CJS)
+- [ ] ACUL screen handoff without `use_page_template`
+- [ ] Beacon-friendly page snippet auth for reliable `pagehide` delivery
 - [ ] Token exchange error status in the browser SDK
 - [ ] Signed page snippet release with SRI
 - [ ] Redis, Postgres and D1 storage backends

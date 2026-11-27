@@ -10,7 +10,7 @@ const span: Span = {
   kind: "client",
   startMs: 1_700_000_000_000,
   durationMs: 1234,
-  attributes: { "auth.ui.step": "password", "auth.method": "password" },
+  attributes: { "auth.ui.stage": "password", "auth.method": "password" },
   status: { code: "ok" },
   events: [],
 };
@@ -34,7 +34,7 @@ describe("encodeSpans", () => {
       ?.scopeSpans[0]?.spans[0];
     expect(encoded?.attributes.map((attribute) => attribute.key)).toEqual([
       "auth.method",
-      "auth.ui.step",
+      "auth.ui.stage",
     ]);
   });
 

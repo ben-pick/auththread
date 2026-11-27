@@ -10,6 +10,7 @@ import {
   parseLogStream,
   verifyLogStream,
 } from "./feed.ts";
+import { classifyAuth0Screen } from "./screens.ts";
 
 const vendorCode = (event: ProviderEvent): string =>
   Option.getOrElse(
@@ -129,5 +130,6 @@ export const auth0Adapter: ProviderAdapter<Auth0FeedSettings> = {
       ? { kind: "hints", hints: event.hints }
       : { kind: "exact", traceId: event.traceId },
   classify: (event) => classifyAuth0Type(vendorCode(event)),
+  classifyUiScreen: classifyAuth0Screen,
   fetchConfig,
 };

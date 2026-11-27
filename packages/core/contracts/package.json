@@ -1,0 +1,34 @@
+{
+  "name": "@auththread/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Effect Schema source for the neutral auth journey contract.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --fsModuleCachePath ./.vitest-cache",
+    "generate": "node src/cli.ts",
+    "check": "node src/cli.ts --check"
+  },
+  "dependencies": {
+    "@auththread/schema": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  }
+}

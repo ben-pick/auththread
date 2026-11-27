@@ -32,7 +32,7 @@ const screen = span({
   name: "auth.ui.screen",
   startMs: at + 100,
   durationMs: 900,
-  attributes: { "auth.ui.step": "password", "auth.method": "password" },
+  attributes: { "auth.ui.stage": "authenticate", "auth.method": "password" },
 });
 
 const callback = span({
@@ -89,7 +89,7 @@ describe("deriveOutcome", () => {
       spanId: parseSpanId("6666666666666666"),
       name: "auth.ui.screen",
       startMs: at,
-      attributes: { "auth.abandoned_at": "mfa_challenge" },
+      attributes: { "auth.abandoned_at": "verify" },
     });
     expect(deriveOutcome([loginStart, abandoned], [])).toBe("abandoned");
   });

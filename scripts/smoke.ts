@@ -74,7 +74,7 @@ const spans = [
     "auth.method": "password",
   }),
   span("2222222222222222", "auth.ui.screen", now - 400, 300, {
-    "auth.ui.step": "password",
+    "auth.ui.stage": "authenticate",
     "auth.method": "password",
   }),
   span(

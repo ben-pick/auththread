@@ -52,12 +52,22 @@ module.exports = {
       name: "no-node-core-outside-node-runtime",
       severity: "error",
       comment:
-        "Core, providers and sinks also run in browsers and Workers. Only the Node runtime, tooling and examples may import Node built-ins.",
+        "Core, providers and sinks also run in browsers and Workers. Only the Node runtime, tooling, the private contracts codegen package and examples may import Node built-ins.",
       from: {
         pathNot:
-          "^(packages/runtimes/node/|packages/tooling/|examples/|scripts/)",
+          "^(packages/runtimes/node/|packages/tooling/|packages/core/contracts/|examples/|scripts/)",
       },
       to: { dependencyTypes: ["core"] },
+    },
+    {
+      name: "no-contracts-or-effect-in-browser-edge",
+      severity: "error",
+      comment:
+        "The zero-dependency browser edge must not import Effect or the private contracts package.",
+      from: {
+        path: "^(packages/core/schema/|packages/core/browser/|packages/providers/[^/]+/src/(browser|actions)\\.ts$)",
+      },
+      to: { path: "(^packages/core/contracts/|^node_modules/effect/)" },
     },
     {
       name: "cloudflare-only-in-cloudflare-runtime",

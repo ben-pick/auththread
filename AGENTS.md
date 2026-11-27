@@ -8,7 +8,9 @@ tool the team already uses.
 
 - `packages/core/*` is the neutral model and join logic. `browser` and `schema` also ship to
   browsers, so they carry no runtime dependency. `adapter-kit` and `stitcher` are the
-  Effect-based server core.
+  Effect-based server core. `contracts` is the private Effect Schema projection of the neutral
+  enums declared in `schema`, and it generates the wide-event JSON; no browser package imports
+  `contracts`.
 - `packages/providers/*` are provider adapters. They depend on core and Effect only.
 - `packages/runtimes/*` are buffers, schedulers and servers. They take providers as input and
   expose Effect layers; the Node example runs them through `NodeRuntime.runMain`.

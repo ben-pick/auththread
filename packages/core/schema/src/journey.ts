@@ -1,9 +1,13 @@
 import type {
   Attributes,
+  AuthMethod,
+  AuthUiStage,
   CorrelationKind,
   JourneyKind,
   Outcome,
   SpanName,
+  WideEventSchemaVersion,
+  WideEventStepType,
 } from "./attributes.ts";
 import type { SpanId, TraceId } from "./ids.ts";
 import type { Span } from "./span.ts";
@@ -51,15 +55,21 @@ export interface Journey {
 
 export interface WideEventStep {
   readonly name: SpanName | string;
-  readonly type: "ui" | "hook" | "app" | "provider";
+  readonly type: WideEventStepType;
   readonly startOffsetMs: number;
   readonly durationMs: number;
+  /** Neutral UI stage, for auth.ui.screen spans. */
+  readonly stage?: AuthUiStage;
+  /** Neutral auth method, when known. */
+  readonly method?: AuthMethod;
+  /** Provider's own screen name, for auth.ui.screen spans. */
+  readonly vendorScreen?: string;
   readonly decision?: string;
   readonly errorCode?: string;
 }
 
 export interface WideEvent {
-  readonly schemaVersion: "1";
+  readonly schemaVersion: WideEventSchemaVersion;
   readonly event: "auth.journey";
   readonly traceId: TraceId;
   readonly spanId: SpanId;
