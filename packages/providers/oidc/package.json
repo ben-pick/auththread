@@ -1,6 +1,6 @@
 {
   "name": "@auththread/oidc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Generic OIDC browser tracing for any standards-based provider.",
   "license": "MIT",
   "type": "module",

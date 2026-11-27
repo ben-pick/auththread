@@ -1,6 +1,6 @@
 {
   "name": "@auththread/auth0-actions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CommonJS Auth0 Actions wrapper for auththread. Requires no runtime dependencies.",
   "license": "MIT",
   "type": "commonjs",

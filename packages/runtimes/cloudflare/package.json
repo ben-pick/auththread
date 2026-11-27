@@ -1,6 +1,6 @@
 {
   "name": "@auththread/runtime-cloudflare",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cloudflare runtime: Durable Object buffer, alarm scheduler, one object per tenant.",
   "license": "MIT",
   "type": "module",

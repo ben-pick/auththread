@@ -1,6 +1,6 @@
 {
   "name": "@auththread/adapter-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider, runtime and sink contracts with the conformance suites that define support.",
   "license": "MIT",
   "type": "module",
