@@ -1,6 +1,6 @@
 {
   "name": "@auththread/browser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-neutral browser SDK. Carries one trace ID across the login redirect.",
   "license": "MIT",
   "type": "module",

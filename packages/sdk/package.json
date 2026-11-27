@@ -1,6 +1,6 @@
 {
   "name": "@auththread/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Effect-based server SDK facade: neutral core, Node and Cloudflare runtime layers.",
   "license": "MIT",
   "type": "module",

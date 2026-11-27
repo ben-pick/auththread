@@ -1,6 +1,6 @@
 {
   "name": "@auththread/otlp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tiny OTLP/HTTP JSON encoder and exporter for auth spans.",
   "license": "MIT",
   "type": "module",

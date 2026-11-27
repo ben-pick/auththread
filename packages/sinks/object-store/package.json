@@ -1,6 +1,6 @@
 {
   "name": "@auththread/sink-object-store",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NDJSON journey objects in S3, R2, MinIO or any compatible store.",
   "license": "MIT",
   "type": "module",

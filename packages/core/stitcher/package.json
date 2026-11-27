@@ -1,6 +1,6 @@
 {
   "name": "@auththread/stitcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Effect service that joins browser, hosted page, hook and provider events into one auth journey.",
   "license": "MIT",
   "type": "module",
