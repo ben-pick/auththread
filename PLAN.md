@@ -319,7 +319,7 @@ Namespace `auth.*`, proposed as OpenTelemetry semantic conventions for authentic
 | `auth.user.hash` | `u_9f2c…` | Salted hash only |
 | `auth.method` | `password`, `social`, `enterprise_sso`, `passwordless`, `passkey`, `mfa` | Neutral method |
 | `auth.method.vendor_name` | `google-oauth2` | Provider's own name |
-| `auth.ui.step` | `identifier`, `password`, `mfa_challenge`, `consent`, `signup`, `reset` | Neutral step |
+| `auth.ui.stage` | `identify`, `authenticate`, `verify`, `enroll`, `select`, `consent`, `recover`, `status`, `custom` | Neutral phase |
 | `auth.ui.vendor_screen` | `login-password` | Provider's own screen name |
 | `auth.hook.name` | `enrich-profile` | |
 | `auth.hook.type` | `auth0.action`, `cognito.lambda_trigger`, `firebase.blocking_function`, `okta.inline_hook`, `supabase.hook` | |
@@ -331,7 +331,7 @@ Namespace `auth.*`, proposed as OpenTelemetry semantic conventions for authentic
 | `auth.error.vendor_code` | `wp` | Provider's raw code |
 | `auth.error.source` | `app`, `ui`, `hook`, `provider` | |
 | `auth.outcome` | `success`, `failed`, `abandoned`, `denied` | On root span |
-| `auth.abandoned_at` | `mfa_challenge` | Neutral step |
+| `auth.abandoned_at` | `verify` | Neutral stage |
 | `auth.correlation` | `exact`, `inferred` | How a span/event was joined |
 | `auth.passkey.result` | `ok`, `NotAllowedError` | Error name only |
 
@@ -389,7 +389,7 @@ auththread/
 
 ### 9.1 Core
 
-- **`@auththread/schema`:** neutral constants and types, `redact()`, `hashUser()`, `rootSpanId()`, `newTraceId()`, and the neutral enums (`auth.method`, `auth.ui.step`, `auth.hook.stage`, `auth.outcome`). **Done when:** 100% coverage on redaction plus property tests.
+- **`@auththread/schema`:** neutral constants and types, `redact()`, `hashUser()`, `rootSpanId()`, `newTraceId()`, and the neutral enums (`auth.method`, `auth.ui.stage`, `auth.hook.stage`, `auth.outcome`). **Done when:** 100% coverage on redaction plus property tests.
 - **`@auththread/otlp`:** OTLP/HTTP JSON exporter with batching, timeout and retry-once; works in browsers, Workers, Node and serverless hooks. **Done when:** validated against a real OpenTelemetry Collector in CI, and under 5 KB gzipped.
 - **`@auththread/adapter-kit`:** the interfaces in §6 plus the three conformance runners. **Done when:** both v0.1 providers and both v0.1 runtimes pass, and a deliberately broken fake adapter fails.
 - **`@auththread/stitcher-core`:** `createStitcher(deps)`. Ingests OTLP spans and provider feeds, redacts again, buffers per trace ID and joins unmatched events by scored hints within ±2 min. It finalises on a terminal event or after a quiet period (default 10 min), then emits the root span and exports. It's idempotent and order-tolerant. **Done when:** the end-to-end conformance corpus produces byte-identical traces on every runtime.
@@ -417,12 +417,15 @@ thread.callback(window.location); // on the callback route
 ### 9.3 Provider: `auth0` (deep, L1-L5)
 
 - **`browser`:** `authorizeParams` → `{ "ext-trace_id": id }`, with helpers for `auth0-spa-js`, `auth0-react` and `nextjs-auth0`.
-- **`page`:** a Universal Login page-template snippet (requires a custom domain). Values come in via a `<meta>` tag with `| escape`; there's also an ACUL `head_tags` variant with SRI. It captures:
-  - screen view and time on screen
-  - submit events (no values)
-  - error codes and JS errors
-  - passkey `DOMException.name`
-  - page exit
+- **`page`:** a Universal Login page-template snippet (requires a custom domain). Values come in via a `<meta>` tag with `| escape`. It captures:
+  - screen view, load/TTFB and time on screen
+  - submit attempts, retries and submit-to-next-screen transition
+  - screen abandonment, tab-hidden time and visibility changes
+  - a coarse first-input and autofill hint, never values or keystrokes
+  - passkey `DOMException.name` and duration
+  - UI exception class names, never messages
+  - social/enterprise delegation
+  - The snippet sends `prompt.screen.name` and `location.pathname`; the adapter maps them to `auth.ui.stage` and `auth.method`. ACUL needs `use_page_template: true` until the explicit `window.auththread` handoff lands.
 - **`actions`:** `withTrace({ name, version }, handler)` with a recording proxy around `api`, which re-throws errors so behaviour is unchanged. Transports:
   - `http`: awaited, with a 250 ms hard timeout
   - `console`: a structured log line, zero added latency
@@ -435,7 +438,7 @@ thread.callback(window.location); // on the callback route
   - page templates need a custom domain
   - registration Actions don't receive `event.request.query` (use a hidden `ulp-` field)
   - reset-password pages don't accept `ext-` params
-  - ACUL `ext-*` availability is unconfirmed
+  - ACUL without `use_page_template: true` has no Liquid context for the trace ID and screen name
   - Log Stream ordering isn't guaranteed
 - **Done when:** a three-screen Auth0 flow (identifier → password → MFA) plus a deny Action yields one trace with UI, hook and provider-event spans in the right order, and the provider conformance kit passes on recorded Log Stream fixtures.
 
@@ -464,7 +467,7 @@ thread.callback(window.location); // on the callback route
 - Grafana (Tempo + Loki) and Datadog, built only on neutral attributes, with each panel available for both spans and wide events:
   - success rate by method
   - outcomes
-  - abandonment by `auth.ui.step`
+  - abandonment by `auth.ui.stage`
   - journey duration
   - hook duration and errors by name, version and type
   - passkey errors
@@ -476,7 +479,7 @@ thread.callback(window.location); // on the callback route
 1. Copy `providers/_template`.
 2. Fill in `capabilities` and implement only what the provider supports.
 3. Add redacted recorded payloads to `fixtures/<provider>/`.
-4. Map vendor codes to the neutral enums in `classify`, and vendor screens and hooks to `auth.ui.step` and `auth.hook.stage`.
+4. Map vendor codes to the neutral enums in `classify`, and vendor screens and hooks to `auth.ui.stage` and `auth.hook.stage`.
 5. Make `runProviderConformance` pass and add the matrix job.
 6. Add an example (docker compose preferred).
 7. Add a row to the provider matrix in the README.

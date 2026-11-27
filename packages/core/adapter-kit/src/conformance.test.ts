@@ -5,6 +5,8 @@ import {
   parseTraceId,
   type Span,
   toWideEvent,
+  WIDE_EVENT_EVENT_NAME,
+  WIDE_EVENT_SCHEMA_VERSION,
 } from "@auththread/schema";
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
@@ -216,8 +218,8 @@ describe("sink conformance", () => {
         sinkId: "capture",
         journeyId: journey.traceId,
         wideEvent: {
-          schemaVersion: "1",
-          event: "auth.journey",
+          schemaVersion: WIDE_EVENT_SCHEMA_VERSION,
+          event: WIDE_EVENT_EVENT_NAME,
           traceId: journey.traceId,
           spanId: journey.root.spanId,
           kind: journey.kind,

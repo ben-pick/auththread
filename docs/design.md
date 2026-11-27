@@ -160,9 +160,10 @@ interface Journey {
 }
 ```
 
-Wide event: one flat record with `schemaVersion`, `event: "auth.journey"`, root attributes,
-`steps[]`, `correlationCounts` and `durationMs`. The JSON Schema is published at
-`packages/core/schema/schema/wide-event-1.json`.
+Wide event: one flat record with `schemaVersion: "2"`, `event: "auth.journey"`, root
+attributes, `steps[]`, `correlationCounts` and `durationMs`. UI steps carry `stage`, `method`
+and `vendorScreen`. The JSON Schema is published at
+`packages/core/schema/schema/wide-event-2.json`.
 
 ### Outcome derivation
 
@@ -358,12 +359,15 @@ Capabilities `browser`, `event-feed`, `hooks`, `hosted-page`, `config`.
   HTTP transport has a 250 ms abort. Console transport adds no latency. `stage` and `kind` are
   options, so a pre-registration Action is not labelled `post_auth`.
 - Log Stream events for signup carry `auth.journey.kind: "signup"`.
-- Page snippet captures screen duration and UI errors from a meta tag config.
+- Page snippet captures screen timing, submit/retry counts, abandonment, visibility, passkey
+  results and UI errors from a template-rendered meta tag. It sends the raw Auth0 screen name;
+  the adapter maps it to a neutral stage and method in the stitcher.
 - `fetchConfig` reads Actions from the Management API.
 
 Known gaps, documented in the page README and the adapter: page templates need a custom
-domain, registration Actions cannot read `event.request.query`, reset pages reject `ext-`
-params, passkey results are not captured, and the Action package is not yet published in a
+domain, ACUL without `use_page_template` has no Liquid context, reset pages reject `ext-`
+params, a failed-only login still relies on the Log Stream for the vendor error code, and the
+Action package is not yet published in a
 form Auth0 Actions can `require`.
 
 **Rebuttal point.** The Action wrapper imports the schema package for hashing and IDs. If
@@ -483,7 +487,7 @@ shrinks back to one route with one store, the layers and schemas become overhead
 | One ordered journey | `pnpm demo` prints five steps, outcome `denied` (**measured**) |
 | Order tolerance | End-to-end conformance with reversed, duplicated, delayed input (**measured**) |
 | Cross-runtime equality | Memory versus Durable Object JSON equality for three fixtures (**measured**) |
-| Browser budget | SDK and page snippet under 5 KB and 8 KB gzipped (**measured**) |
+| Browser budget | SDK 2,482 bytes gzipped against 5 KB; page snippet 3,055 against 8 KB (**measured**) |
 | Hook latency under 50 ms p95 | Needs a real tenant (**unverified**) |
 | Keycloak compose runs | Docker unavailable during the build (**unverified**) |
 | Management API config fetch | No real tenant call (**unverified**) |

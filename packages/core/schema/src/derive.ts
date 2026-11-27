@@ -2,11 +2,13 @@ import {
   type AttributeValue,
   type AuthAttribute,
   isAuthHookDecision,
-  isAuthUiStep,
+  isAuthUiStage,
   isJourneyKind,
   isOutcome,
+  isSignupEventType,
   type JourneyKind,
   type Outcome,
+  outcomeOfProviderEvent,
   SPAN_NAMES,
 } from "./attributes.ts";
 import { compareStrings } from "./compare.ts";
@@ -74,11 +76,9 @@ export function deriveOutcome(
   }
 
   for (const event of events) {
-    if (event.type === "login_failure" || event.type === "signup_failure") {
-      signals.push({ outcome: "failed", at: event.atMs });
-    }
-    if (event.type === "login_success" || event.type === "signup_success") {
-      signals.push({ outcome: "success", at: event.atMs });
+    const outcome = outcomeOfProviderEvent(event.type);
+    if (outcome === "failed" || outcome === "success") {
+      signals.push({ outcome, at: event.atMs });
     }
   }
 
@@ -100,7 +100,7 @@ export function deriveKind(
     .find(isJourneyKind);
   if (explicit !== undefined) return explicit;
 
-  if (events.some((event) => event.type.startsWith("signup_"))) return "signup";
+  if (events.some((event) => isSignupEventType(event.type))) return "signup";
   return "login";
 }
 
@@ -130,8 +130,14 @@ function aggregateRootAttributes(
 
   const abandonedAt = spans
     .map((span) => span.attributes["auth.abandoned_at"])
-    .find(isAuthUiStep);
+    .find(isAuthUiStage);
   if (abandonedAt !== undefined) out["auth.abandoned_at"] = abandonedAt;
+
+  const abandonedScreen = spans
+    .map((span) => span.attributes["auth.abandoned_screen"])
+    .find((value) => typeof value === "string");
+  if (abandonedScreen !== undefined)
+    out["auth.abandoned_screen"] = abandonedScreen;
 
   const deniedBy = spans.find(
     (span) => span.attributes["auth.hook.decision"] === "deny",

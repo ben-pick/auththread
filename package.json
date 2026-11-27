@@ -7,9 +7,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check && pnpm template:check",
+    "check": "pnpm typecheck && pnpm lint && pnpm schema:check && pnpm test && pnpm boundaries && pnpm lint:ci && pnpm budget && pnpm agents:check && pnpm template:check",
     "typecheck": "turbo run typecheck",
     "lint": "biome check .",
+    "schema:generate": "pnpm --filter @auththread/contracts generate",
+    "schema:check": "pnpm --filter @auththread/contracts check",
     "lint:fix": "biome check --write .",
     "lint:ci": "actionlint",
     "test": "turbo run test",

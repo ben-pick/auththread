@@ -6,7 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema/wide-event-1.json": "./schema/wide-event-1.json",
+    "./schema/*.json": "./schema/*.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -50,7 +50,7 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
       },
-      "./schema/wide-event-1.json": "./schema/wide-event-1.json",
+      "./schema/*.json": "./schema/*.json",
       "./package.json": "./package.json"
     }
   },

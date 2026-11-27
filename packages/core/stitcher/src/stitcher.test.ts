@@ -71,6 +71,15 @@ const adapter: ProviderAdapter<FeedSettings> = {
     event.type === "login_failure"
       ? { outcome: "failed", errorCode: "invalid_password" }
       : { outcome: "success" },
+  classifyUiScreen: (screen) => {
+    if (screen.vendorScreen === "login-password") {
+      return { stage: "authenticate", method: "password" };
+    }
+    if (screen.vendorScreen === "mfa-sms-challenge") {
+      return { stage: "verify", method: "mfa", methodVendorName: "sms" };
+    }
+    return {};
+  },
 };
 
 const tenant: TenantSettings<FeedSettings> = {
@@ -709,6 +718,65 @@ describe("http surface", () => {
   );
 });
 
+describe("UI screen normalization", () => {
+  it.effect("stamps stage, method, abandonment and the root parent", () =>
+    withStitcher((stitcher, captured) =>
+      Effect.gen(function* () {
+        const localTrace = newTraceId((length) =>
+          new Uint8Array(length).fill(7),
+        );
+
+        yield* stitcher.ingestSpan(
+          {
+            traceId: localTrace,
+            spanId: parseSpanId("7777777777777777"),
+            parentSpanId: null,
+            name: "auth.ui.screen",
+            kind: "client",
+            startMs: NOW,
+            durationMs: 1200,
+            attributes: {
+              "auth.provider": "fake",
+              "auth.tenant": "acme",
+              "auth.ui.vendor_screen": "login-password",
+              "auth.ui.vendor_path": "/u/login/password",
+              "auth.ui.abandoned": true,
+              "auth.ui.step": "password",
+            },
+            status: { code: "unset" },
+            events: [],
+          },
+          tenant,
+        );
+
+        yield* stitcher.runDue(NOW + 5000);
+        yield* stitcher.flush;
+        const batch = captured.find((entry) => entry.journeyId === localTrace);
+        const screen = batch?.spans?.find(
+          (entry) => entry.name === "auth.ui.screen",
+        );
+
+        expect(screen?.parentSpanId).toBe(rootSpanId(localTrace));
+        expect(screen?.attributes).toMatchObject({
+          "auth.ui.stage": "authenticate",
+          "auth.method": "password",
+          "auth.abandoned_at": "authenticate",
+          "auth.abandoned_screen": "login-password",
+        });
+        expect(screen?.attributes["auth.ui.step"]).toBeUndefined();
+        expect(screen?.attributes["auth.ui.abandoned"]).toBeUndefined();
+        expect(
+          batch?.wideEvent?.steps.find((step) => step.type === "ui"),
+        ).toMatchObject({
+          stage: "authenticate",
+          method: "password",
+          vendorScreen: "login-password",
+        });
+      }),
+    ),
+  );
+});
+
 describe("abandonment", () => {
   it.effect("marks a quiet journey without a callback as abandoned", () =>
     withStitcher((stitcher) =>
@@ -728,7 +796,7 @@ describe("abandonment", () => {
             attributes: {
               "auth.provider": "fake",
               "auth.tenant": "acme",
-              "auth.ui.step": "mfa_challenge",
+              "auth.ui.stage": "verify",
             },
             status: { code: "unset" },
             events: [],

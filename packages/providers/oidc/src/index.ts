@@ -1,18 +1,15 @@
 import type { ProviderAdapter } from "@auththread/adapter-kit";
-import type { Outcome, ProviderEvent } from "@auththread/schema";
+import {
+  type Outcome,
+  outcomeOfProviderEvent,
+  type ProviderEvent,
+} from "@auththread/schema";
 import { Option, Schema } from "effect";
-
-const OUTCOMES: Record<string, Outcome> = {
-  login_success: "success",
-  signup_success: "success",
-  login_failure: "failed",
-  signup_failure: "failed",
-};
 
 const classify = (
   event: ProviderEvent,
 ): { outcome?: Outcome; errorCode?: string } => {
-  const outcome = OUTCOMES[event.type];
+  const outcome = outcomeOfProviderEvent(event.type);
   const vendorCode = Option.getOrUndefined(
     Schema.decodeUnknownOption(Schema.String)(
       event.attributes["auth.error.vendor_code"],

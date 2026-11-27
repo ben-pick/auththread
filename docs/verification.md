@@ -27,15 +27,23 @@ actionlint and the agent file checks. The suite is green and `pnpm boundaries` i
 - **Deployment and local artifacts.** `examples/local-compose` and `templates/cloudflare-worker` carry the local demo and Cloudflare contracts. `pnpm template:check` verifies the Worker template contract and typechecks it against the workspace API.
 - **Bundle budgets.** `pnpm budget` runs in `pnpm check` and fails above either budget. The
   browser SDK is bundled alone, without demo app code, and must stay under 5 KB gzipped. The
-  page snippet as shipped must stay under 8 KB. The Keycloak example app is measured and
-  reported without a budget, because it contains the demo's own page code. Run `pnpm budget`
-  for the current sizes. `pnpm budget --base <ref> --format markdown` measures the base in a
-  detached worktree and prints the gzipped, minified, budget and change columns. CI uploads
-  that markdown and a separate no-checkout job posts one sticky comment; the report is
+  page snippet as shipped must stay under 8 KB. Current sizes are 2,482 bytes and 3,055 bytes
+  gzipped. The Keycloak example app is measured and reported without a budget, because it
+  contains the demo's own page code. `pnpm budget --base <ref> --format markdown` measures the
+  base in a detached worktree and prints the gzipped, minified, budget and change columns. CI
+  uploads that markdown and a separate no-checkout job posts one sticky comment; the report is
   informational and the budget gate stays in `pnpm check`. BundleMon was not adopted; see
   [ADR-0011](decisions/0011-bundle-size-pr-report.md).
 - **Provider conformance.** OIDC and Auth0 pass `runProviderConformance` against recorded
   payloads, including an adapter that must fail.
+- **Schema derivation.** `pnpm schema:check` regenerates `wide-event-2.json` from the private
+  Effect contract in `@auththread/contracts`, and fails on drift. The contract imports the
+  zero-dependency enum tuples from `@auththread/schema`; `wide-event-schema.test.ts` compares
+  every JSON enum back to those tuples.
+- **Auth0 screen coverage.** The Auth0 adapter maps all 92 screens in the Management API enum
+  to the nine neutral stages. A vendored screen list, a stage-distribution snapshot and
+  `runUiScreenConformance` fail if a screen is missed or remapped accidentally. Unknown
+  screens return no stage instead of defaulting to `identifier`.
 - **Runtime conformance.** Memory, Node timer, SQLite and Durable Object alarm runtimes pass
   `runRuntimeConformance`.
 - **Dependency graph.** `pnpm graph` collapses dependency-cruiser output to workspace packages
@@ -121,7 +129,7 @@ After the review, three changes landed:
   and `kind`, and the browser SDK takes a `kind`.
 - The browser SDK batches spans, flushes on the redirect, the callback and a page hide, and
   stays under the browser budget when measured on its own. The page snippet is measured as
-  shipped and stays under its own budget.
+  shipped at 3,055 bytes gzipped and the browser SDK at 2,482 bytes.
 - The Cloudflare Worker resolves the API key with `createKeyDirectory` and routes to one
   Durable Object per tenant, so tenant state is isolated before ingest.
 

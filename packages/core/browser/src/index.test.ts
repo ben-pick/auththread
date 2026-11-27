@@ -149,7 +149,7 @@ describe("browser SDK", () => {
     });
 
     client.tokenExchange(120);
-    client.abandon("mfa_challenge");
+    client.abandon("verify");
     client.flush();
 
     expect(sent[0]).toMatchObject({
@@ -157,7 +157,7 @@ describe("browser SDK", () => {
       durationMs: 120,
       startMs: 880,
     });
-    expect(sent[1]?.attributes["auth.abandoned_at"]).toBe("mfa_challenge");
+    expect(sent[1]?.attributes["auth.abandoned_at"]).toBe("verify");
   });
 
   it("batches spans until the size or a flush", () => {

@@ -10,10 +10,15 @@ interface PublicPackage {
 
 const root = resolve(import.meta.dirname, "..");
 
+const schemaFiles = readdirSync(join(root, "packages/core/schema/schema"))
+  .filter((file) => file.endsWith(".json"))
+  .sort()
+  .map((file) => `schema/${file}`);
+
 const packages: readonly PublicPackage[] = [
   {
     directory: "packages/core/schema",
-    required: ["dist/index.js", "dist/index.d.ts", "schema/wide-event-1.json"],
+    required: ["dist/index.js", "dist/index.d.ts", ...schemaFiles],
   },
   {
     directory: "packages/core/otlp",
