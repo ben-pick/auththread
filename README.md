@@ -2,7 +2,7 @@
 
 **See one login journey end to end, in the observability/analytics tool you already use.**
 
-[![status](https://img.shields.io/badge/status-v0.2-1f6feb)](#roadmap)
+[![status](https://img.shields.io/badge/status-early-1f6feb)](#roadmap)
 [![CI](https://github.com/ben-pick/auththread/actions/workflows/ci.yml/badge.svg)](https://github.com/ben-pick/auththread/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40auththread%2Fsdk?label=npm&color=cb3837)](https://www.npmjs.com/package/@auththread/sdk)
 [![license](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
@@ -15,7 +15,7 @@ Auththread stitches the app, the hosted login page, server-side hooks and provid
 one journey. Tired of trying to piece together logs that are disjoint and cannot get proper telemetry on authentication?
 Auththread is the solution!
 
-> **Status: v0.2, early.**
+> **Status: early.**
 
 ## Contents
 
@@ -271,9 +271,9 @@ Current status: `pnpm check` is green and `pnpm boundaries` reports no violation
 
 ## Roadmap
 
-### Shipped in v0.2
+### Shipped
 
-- [x] Neutral schema, double redaction, wide event v1
+- [x] Neutral schema, double redaction, wide event
 - [x] OTLP encoder, batch exporter and OTLP sink
 - [x] Stitcher with exact trace and transaction joins, quiet finalisation
 - [x] Generic OIDC browser adapter

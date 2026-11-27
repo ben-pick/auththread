@@ -15,5 +15,5 @@ What this does not guarantee: a salted hash is pseudonymous, not anonymous. Corr
 with a provider's own logs can re-identify a user. Treat a journey store with the same care
 as an access log.
 
-Known gaps in v0.1: passkey error names are not captured, and a provider's raw error message
+Known gaps: passkey error names are not captured, and a provider's raw error message
 can include text you did not intend. Both are tracked in `PLAN.md`.

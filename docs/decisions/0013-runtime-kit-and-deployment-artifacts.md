@@ -15,7 +15,7 @@ scope:
 
 - The neutral core is `schema`, `adapter-kit`, `config`, `stitcher` and `sdk`.
 - A platform adapter supplies a buffer, scheduler and HTTP host. Node and
-  Cloudflare are the supported adapters in v0.1.
+  Cloudflare are the supported adapters in the initial release.
 - `@auththread/sdk` exposes `./node` and `./cloudflare` subpaths. The browser
   SDK stays separate.
 - Deployment artifacts are separate from the package graph: a bundled Node

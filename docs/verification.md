@@ -1,4 +1,4 @@
-# Verification for v0.1
+# Verification
 
 Every claim in the README is checked here, or labelled as not checked.
 
@@ -71,7 +71,7 @@ actionlint and the agent file checks. The suite is green and `pnpm boundaries` i
 ## Not verified here
 
 - **The Keycloak compose stack was not executed.** Docker was unavailable in the environment
-  that built v0.1. The compose file, realm import, page and bundle were written but not run.
+  that built the first release. The compose file, realm import, page and bundle were written but not run.
   This is the first thing to run in CI or locally.
 - **The Node image was not built with Docker here.** Its install step was reproduced from a
   clean copy with `CI=1 pnpm install --frozen-lockfile`, the budget script ran, and the server

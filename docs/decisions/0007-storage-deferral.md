@@ -1,11 +1,11 @@
 ---
 id: "0007"
-title: "v0.1 defers Redis, Postgres and D1 storage"
+title: "The initial release defers Redis, Postgres and D1 storage"
 scope:
   - "packages/runtimes/**"
 ---
 
-# 0007. v0.1 defers Redis, Postgres and D1 storage
+# 0007. The initial release defers Redis, Postgres and D1 storage
 
 ## Outcome
 
@@ -25,7 +25,7 @@ scope:
 
 ## Why
 
-`PLAN.md` lists Redis and D1 in v0.1. Shipping an unverified Redis adapter would make the
+`PLAN.md` lists Redis and D1 in the initial release. Shipping an unverified Redis adapter would make the
 runtime matrix a guess. Memory, SQLite and Durable Object storage are verified by conformance,
 so they ship, and the rest is recorded as deferred rather than implied.
 
